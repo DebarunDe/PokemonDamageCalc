@@ -416,9 +416,11 @@ def attacker_task(index: int) -> tuple[list[dict], dict]:
             s = summaries.get((ability_a, a_tier, d_tier), {})
             return tuple(sum(v[k] for v in s.values()) for k in ("reliable", "guaranteed", "possible"))
         ability_a = max(a.abilities, key=score)
+        # Abilities that do equally well are all listed: the choice doesn't matter.
+        tied = [ab for ab in a.abilities if score(ab) == score(ability_a)]
         summary = summaries.get((ability_a, a_tier, d_tier), {})
         prefix = f"{a_tier} vs {d_tier}"
-        ranking[f"{prefix}: ability"] = ability_a
+        ranking[f"{prefix}: ability"] = " / ".join(tied)
         for key in ("reliable", "no_recharge", "guaranteed", "possible"):
             ranking[f"{prefix}: {key}"] = sum(v[key] for v in summary.values())
         for d_name, v in summary.items():
@@ -426,7 +428,7 @@ def attacker_task(index: int) -> tuple[list[dict], dict]:
             s, hp, best, rel, nr = w["setup"], w["hp"], w["best"], w["reliable"], w["no_recharge"]
             rows.append({
                 "attacker": a.name,
-                "attacker_ability": ability_a,
+                "attacker_ability": " / ".join(tied),
                 "attacker_item": a.attack_item or "",
                 "defender": d_name,
                 "defender_ability": s.ability_d,
@@ -458,6 +460,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=Path(__file__).parent / "output")
     parser.add_argument("--processes", type=int, default=os.cpu_count())
     parser.add_argument("--limit", type=int, help="only run the first N attackers (for testing)")
+    parser.add_argument("--attackers", default="", help="comma-separated attackers to run (all others still defend)")
     parser.add_argument(
         "--exclude", default="",
         help="comma-separated moves to leave out; 'recharge' means Hyper Beam, Giga Impact and the like",
@@ -469,6 +472,9 @@ def main() -> None:
         excluded |= RECHARGE_MOVES if name.lower() == "recharge" else {name}
     roster = load_roster(Calculator(), args.roster, excluded)
     attackers = range(len(roster))[: args.limit]
+    if args.attackers:
+        wanted = {n.strip() for n in args.attackers.split(",")}
+        attackers = [i for i in attackers if roster[i].name in wanted]
 
     start = time.time()
     rows, ranking = [], []
@@ -482,6 +488,8 @@ def main() -> None:
     print(file=sys.stderr)
 
     name = f"ohko_{args.roster}_{'doubles' if args.doubles else 'singles'}"
+    if args.attackers or args.limit:
+        name += "_partial"
     if excluded:
         name += "_excluding-" + ("recharge" if excluded == RECHARGE_MOVES else str(len(excluded)))
     args.out.mkdir(parents=True, exist_ok=True)
@@ -500,9 +508,9 @@ def main() -> None:
     print(f"Wrote {args.out / name}_matchups.csv.gz and _ranking.csv\n")
     others = len(roster) - 1
     print(f"Reliable OHKOs, max+ attacker vs 32 HP defender (out of {others}):")
-    print(f"  {'':24} {'ability':16} {'90%+':>5} {'no-rchg':>8} {'any':>5}")
+    print(f"  {'':24} {'ability':34} {'90%+':>5} {'no-rchg':>8} {'any':>5}")
     for r in ranking[:25]:
-        print(f"  {r['pokemon']:24} {r['max+ vs hp: ability']:16} {r['max+ vs hp: reliable']:5}"
+        print(f"  {r['pokemon']:24} {r['max+ vs hp: ability']:34} {r['max+ vs hp: reliable']:5}"
               f" {r['max+ vs hp: no_recharge']:8} {r['max+ vs hp: guaranteed']:5}")
 
 
