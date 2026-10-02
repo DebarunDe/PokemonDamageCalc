@@ -273,3 +273,13 @@ def test_rivalry_depends_on_gender(calc):
     assert hit("M", "M") > neutral > hit("M", "F")
     with pytest.raises(CalcError, match="Gender"):
         PokemonSet("Pyroar", gender="X")
+
+
+def test_regulations():
+    current = Calculator()
+    assert current.regulation == "M-C"
+    assert set(current.regulations) >= {"M-A", "M-B", "M-C"}
+    sizes = {r: len(Calculator(r).legal_species) for r in ("M-A", "M-B", "M-C")}
+    assert sizes["M-A"] < sizes["M-B"] < sizes["M-C"]
+    with pytest.raises(CalcError, match="Unknown regulation"):
+        Calculator("M-Z")

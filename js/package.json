@@ -3,7 +3,21 @@
   "private": true,
   "description": "Builds the JS bundle and learnset data embedded in the champcalc Python package.",
   "config": {
-    "showdownCommit": "1ce9b34f971867b1c63689b167641d9ec552a985"
+    "defaultRegulation": "M-C",
+    "regulations": {
+      "M-A": {
+        "commit": "10f47c9de12a9eb15cc3db0fab9105a1d1f7149b",
+        "mod": "championsregma"
+      },
+      "M-B": {
+        "commit": "10f47c9de12a9eb15cc3db0fab9105a1d1f7149b",
+        "mod": "champions"
+      },
+      "M-C": {
+        "commit": "de9d7f93083c1f7f40d48f8da3a6b4dd09141110",
+        "mod": "champions"
+      }
+    }
   },
   "scripts": {
     "build": "node build.mjs"

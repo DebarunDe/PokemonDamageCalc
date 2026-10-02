@@ -21,20 +21,29 @@ def _to_id(text: str) -> str:
 class Calculator:
     """Pokemon Champions damage calculator.
 
+    `regulation` ("M-A", "M-B", "M-C", ...) picks the legal roster, movepools,
+    abilities and accuracies; it defaults to the current one. Damage itself
+    always uses @smogon/calc's Champions mechanics.
+
     Creating one loads the JS bundle (about 0.2s); reuse a single instance.
     Instances are safe to share between threads.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, regulation: str | None = None) -> None:
         data = resources.files("champcalc") / "data"
+        champions = json.loads(data.joinpath("champions.json").read_text(encoding="utf-8"))
+        self.regulations: list[str] = list(champions["regulations"])
+        self.regulation: str = regulation or champions["default_regulation"]
+        if self.regulation not in champions["regulations"]:
+            raise CalcError(f"Unknown regulation '{regulation}'; expected one of {', '.join(self.regulations)}")
+        reg = champions["regulations"][self.regulation]
+        self.showdown_commit: str = reg["showdown_commit"]
+        self._legal: list[str] = reg["legal"]
+        self._learnsets: dict[str, list[str]] = reg["learnsets"]
+        self._abilities: dict[str, list[str]] = reg["abilities"]
+        self._accuracy: dict[str, int | bool] = reg["accuracy"]
         self._ctx = MiniRacer()
         self._ctx.eval(data.joinpath("calc.js").read_text(encoding="utf-8"))
-        champions = json.loads(data.joinpath("champions.json").read_text(encoding="utf-8"))
-        self.showdown_commit: str = champions["showdown_commit"]
-        self._legal: list[str] = champions["legal"]
-        self._learnsets: dict[str, list[str]] = champions["learnsets"]
-        self._abilities: dict[str, list[str]] = champions["abilities"]
-        self._accuracy: dict[str, int | bool] = champions["accuracy"]
         self._lock = threading.Lock()
 
     def _call(self, function: str, payload: dict[str, Any]) -> Any:

@@ -8,21 +8,22 @@ python analysis/ohko.py --roster megas     # Megas only (~1 min)
 python analysis/ohko.py --doubles          # spread moves take 0.75x
 python analysis/ohko.py --exclude recharge # also drop Hyper Beam, Giga Impact, ...
 python analysis/ohko.py --items none       # non-Megas hold nothing (Megas keep their stones)
+python analysis/ohko.py --regulation M-B   # an earlier regulation (default: the current one, M-C)
 ```
 
 The results go to `analysis/output/` (not committed):
-- `ohko_<roster>_<mode>_matchups.csv.gz`: one row per attacker, defender and baseline pair.
+- `ohko_<regulation>_<roster>_<mode>_matchups.csv.gz`: one row per attacker, defender and baseline pair.
   Each row has the attacker's ability and item, the defender's worst-case ability, the best move,
   the best reliable move and the best reliable move without a recharge turn, damage percentages,
   OHKO flags, weather, terrain and notes.
-- `ohko_<roster>_<mode>_ranking.csv`: per Pokémon, how many others it OHKOs at each baseline pair,
+- `ohko_<regulation>_<roster>_<mode>_ranking.csv`: per Pokémon, how many others it OHKOs at each baseline pair,
   the first-strike count, its Speed (base and with 32 SP), and with which ability.
 
 ## Method
 
-**Roster:** `Calculator.legal_species`. That's every Pokémon and Mega with a tier in Showdown's
-Champions data, plus non-battle-only formes of legal species, minus duplicates that play identically.
-That makes 344 entries, 82 of them Megas.
+**Roster:** `Calculator(regulation).legal_species`. That's every Pokémon and Mega with a tier in
+Showdown's data for that regulation, plus non-battle-only formes of legal species, minus duplicates
+that play identically. M-A has 278 entries, M-B 314 and M-C 344.
 
 **Baselines:** 3 attacker × 3 defender.
 

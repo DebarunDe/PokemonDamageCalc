@@ -1,19 +1,21 @@
 // Produces the two files embedded in the Python package:
 //   src/champcalc/data/calc.js        - entry.js + @smogon/calc bundled into one script
-//   src/champcalc/data/champions.json - legal roster, movepools and ability lists (keyed by the
-//                                       calc's species names) and move accuracies
+//   src/champcalc/data/champions.json - per regulation: legal roster, movepools and ability lists
+//                                       (keyed by the calc's species names) and move accuracies
 //
-// Movepools come from Pokemon Showdown's `champions` mod and ability lists from
-// its pokedex, both at a pinned commit (package.json -> config.showdownCommit).
-// @smogon/calc only stores one default ability per species, hence the pokedex.
-// To pick up a balance patch, bump that commit and `@smogon/calc`, then rebuild.
+// Each regulation is read from Pokemon Showdown at a pinned commit and mod
+// (package.json -> config.regulations). A mod without its own file for some
+// data falls back to the `champions` mod at the same commit, as Showdown does.
+// Ability lists come from the pokedex, because @smogon/calc only stores one
+// default ability per species. To pick up a new regulation or balance patch,
+// add or bump an entry there, update `@smogon/calc`, then rebuild.
 import {readFileSync, writeFileSync} from 'node:fs';
 import {build} from 'esbuild';
 import {Generations} from '@smogon/calc';
 
 const pkg = JSON.parse(readFileSync(new URL('package.json', import.meta.url)));
 const OUT = new URL('../src/champcalc/data/', import.meta.url);
-const commit = pkg.config.showdownCommit;
+const {regulations: REGULATIONS, defaultRegulation} = pkg.config;
 
 await build({
   entryPoints: [new URL('entry.js', import.meta.url).pathname],
@@ -28,28 +30,39 @@ await build({
 
 const toID = text => ('' + text).toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-async function fetchShowdownFile(path) {
+const fileCache = new Map();
+async function fetchShowdownFile(commit, path, {optional = false} = {}) {
   const url = `https://raw.githubusercontent.com/smogon/pokemon-showdown/${commit}/${path}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Fetching ${url} failed: ${response.status}`);
-  return response.text();
+  if (!fileCache.has(url)) {
+    const response = await fetch(url);
+    if (response.status === 404 && optional) {
+      fileCache.set(url, null);
+    } else if (!response.ok) {
+      throw new Error(`Fetching ${url} failed: ${response.status}`);
+    } else {
+      fileCache.set(url, await response.text());
+    }
+  }
+  return fileCache.get(url);
 }
 
 // Showdown's data files are a single object literal behind a type annotation.
-async function fetchShowdownTable(path) {
-  const source = await fetchShowdownFile(path);
+function parseTable(source) {
   const literal = source.slice(source.indexOf('= {') + 2).trim().replace(/;$/, '');
   return new Function(`return (${literal});`)();
 }
 
-const upstreamLearnsets = await fetchShowdownTable('data/mods/champions/learnsets.ts');
-const upstreamPokedex = await fetchShowdownTable('data/pokedex.ts');
-const upstreamFormats = await fetchShowdownTable('data/mods/champions/formats-data.ts');
+// A mod's own file, else the `champions` mod's at the same commit.
+async function modTable(commit, mod, file) {
+  const own = await fetchShowdownFile(commit, `data/mods/${mod}/${file}`, {optional: true});
+  return parseTable(own ?? await fetchShowdownFile(commit, `data/mods/champions/${file}`));
+}
 
 // moves.ts holds TypeScript callbacks, so read each move's top-level
 // `accuracy:` line instead of evaluating the file. `true` means it never misses.
 function parseAccuracies(source) {
   const accuracies = {};
+  if (!source) return accuracies;
   const entries = [...source.matchAll(/^\t(\w+): \{$/gm)];
   entries.forEach((entry, i) => {
     const block = source.slice(entry.index, entries[i + 1]?.index ?? source.length);
@@ -58,11 +71,6 @@ function parseAccuracies(source) {
   });
   return accuracies;
 }
-const accuracyById = {
-  ...parseAccuracies(await fetchShowdownFile('data/moves.ts')),
-  // Champions changes some accuracies, e.g. Crabhammer is 95%.
-  ...parseAccuracies(await fetchShowdownFile('data/mods/champions/moves.ts')),
-};
 
 // Formes without their own entry (Megas, Aegislash-Blade, Gourgeist sizes, ...)
 // use the nearest named parent (Meowstic-F-Mega -> Meowstic-F -> Meowstic),
@@ -78,89 +86,108 @@ function findEntry(species, lookup) {
 }
 
 const gen = Generations.get(0);
-const learnsets = {};
-const abilities = {};
-const problems = [];
-for (const species of gen.species) {
-  const learnset = findEntry(species, id => {
-    const l = upstreamLearnsets[id]?.learnset;
-    return l && Object.keys(l).length ? l : null;
-  });
-  if (learnset) {
-    const moves = [];
-    for (const id of Object.keys(learnset)) {
-      const move = gen.moves.get(id);
-      if (move) moves.push(move.name);
-      else problems.push(`${species.name}: move '${id}' is unknown to @smogon/calc`);
-    }
-    learnsets[species.name] = moves.sort();
-  } else {
-    problems.push(`no learnset for ${species.name}`);
-  }
-
-  const entry = findEntry(species, id => upstreamPokedex[id]);
-  if (entry) {
-    abilities[species.name] = Object.values(entry.abilities).filter(a => {
-      if (gen.abilities.get(toID(a))) return true;
-      problems.push(`${species.name}: ability '${a}' is not in Champions, skipped`);
-      return false;
-    });
-  } else {
-    problems.push(`no pokedex entry for ${species.name}`);
-  }
-}
-
-const accuracy = {};
-for (const move of gen.moves) {
-  if (move.id === 'nomove') continue;
-  if (move.id in accuracyById) accuracy[move.name] = accuracyById[move.id];
-  else problems.push(`no accuracy for ${move.name}`);
-}
-
-// Legal roster. A forme is legal when Champions' formats data gives it a tier,
-// or when it is not battle-only (Mega formes count as tiered) and its base
-// species is legal. Formes identical in battle to an earlier one (Vivillon
-// patterns, Squawkabilly colours sharing abilities, ...) are dropped.
 // @smogon/calc has no plain Aegislash; its Aegislash-Both attacks as Blade and
 // defends as Shield, which is how Stance Change plays out.
 const CALC_NAME = {aegislash: 'Aegislash-Both'};
-const isLegalId = id => !!upstreamFormats[id]?.tier && upstreamFormats[id].tier !== 'Illegal';
-const legal = [];
-const seen = new Map();
-for (const species of [...gen.species].sort((a, b) => a.name.localeCompare(b.name))) {
-  const id = toID(species.name);
-  const dex = upstreamPokedex[id];
-  const aliased = Object.entries(CALC_NAME).find(([, name]) => name === species.name)?.[0];
-  let ok = isLegalId(id) || (aliased && isLegalId(aliased));
-  if (!ok && dex && !dex.battleOnly && species.baseSpecies) ok = isLegalId(toID(species.baseSpecies));
-  if (!ok) continue;
-  const signature = JSON.stringify([
-    species.types, species.baseStats, abilities[species.name], learnsets[species.name],
-  ]);
-  if (seen.has(signature)) continue;
-  seen.set(signature, species.name);
-  legal.push(species.name);
-}
-for (const [id, entry] of Object.entries(upstreamFormats)) {
-  if (!isLegalId(id)) continue;
-  const name = CALC_NAME[id] || gen.species.get(id)?.name;
-  if (!name || !gen.species.get(toID(name))) problems.push(`legal '${id}' is unknown to @smogon/calc`);
+const sorted = table => Object.fromEntries(Object.entries(table).sort(([a], [b]) => a.localeCompare(b)));
+
+async function buildRegulation(name, {commit, mod}) {
+  const problems = [];
+  const upstreamLearnsets = await modTable(commit, mod, 'learnsets.ts');
+  const upstreamFormats = await modTable(commit, mod, 'formats-data.ts');
+  const upstreamPokedex = parseTable(await fetchShowdownFile(commit, 'data/pokedex.ts'));
+  const accuracyById = {
+    ...parseAccuracies(await fetchShowdownFile(commit, 'data/moves.ts')),
+    // Champions changes some accuracies, e.g. Crabhammer is 95%.
+    ...parseAccuracies(await fetchShowdownFile(commit, 'data/mods/champions/moves.ts')),
+    ...(mod === 'champions' ? {} :
+      parseAccuracies(await fetchShowdownFile(commit, `data/mods/${mod}/moves.ts`, {optional: true}))),
+  };
+
+  const learnsets = {};
+  const abilities = {};
+  for (const species of gen.species) {
+    const learnset = findEntry(species, id => {
+      const l = upstreamLearnsets[id]?.learnset;
+      return l && Object.keys(l).length ? l : null;
+    });
+    if (learnset) {
+      const moves = [];
+      for (const id of Object.keys(learnset)) {
+        const move = gen.moves.get(id);
+        if (move) moves.push(move.name);
+        else problems.push(`${species.name}: move '${id}' is unknown to @smogon/calc`);
+      }
+      learnsets[species.name] = moves.sort();
+    }
+
+    const entry = findEntry(species, id => upstreamPokedex[id]);
+    if (entry) {
+      abilities[species.name] = Object.values(entry.abilities).filter(a => {
+        if (gen.abilities.get(toID(a))) return true;
+        problems.push(`${species.name}: ability '${a}' is not in Champions, skipped`);
+        return false;
+      });
+    } else {
+      problems.push(`no pokedex entry for ${species.name}`);
+    }
+  }
+
+  const accuracy = {};
+  for (const move of gen.moves) {
+    if (move.id === 'nomove') continue;
+    if (move.id in accuracyById) accuracy[move.name] = accuracyById[move.id];
+    else problems.push(`no accuracy for ${move.name}`);
+  }
+
+  // Legal roster. A forme is legal when the formats data gives it a tier, or
+  // when it is not battle-only (Mega formes count as tiered) and its base
+  // species is legal. Formes identical in battle to an earlier one (Vivillon
+  // patterns, Squawkabilly colours sharing abilities, ...) are dropped.
+  const isLegalId = id => !!upstreamFormats[id]?.tier && upstreamFormats[id].tier !== 'Illegal';
+  const legal = [];
+  const seen = new Set();
+  for (const species of [...gen.species].sort((a, b) => a.name.localeCompare(b.name))) {
+    const id = toID(species.name);
+    const dex = upstreamPokedex[id];
+    const aliased = Object.entries(CALC_NAME).find(([, n]) => n === species.name)?.[0];
+    let ok = isLegalId(id) || (aliased && isLegalId(aliased));
+    if (!ok && dex && !dex.battleOnly && species.baseSpecies) ok = isLegalId(toID(species.baseSpecies));
+    if (!ok) continue;
+    const signature = JSON.stringify([
+      species.types, species.baseStats, abilities[species.name], learnsets[species.name],
+    ]);
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    legal.push(species.name);
+  }
+  for (const n of legal) {
+    if (!learnsets[n]) problems.push(`no learnset for legal ${n}`);
+  }
+  for (const id of Object.keys(upstreamFormats)) {
+    if (!isLegalId(id)) continue;
+    const calcName = CALC_NAME[id] || gen.species.get(id)?.name;
+    if (!calcName || !gen.species.get(toID(calcName))) problems.push(`legal '${id}' is unknown to @smogon/calc`);
+  }
+
+  for (const p of problems) console.warn(`warning (${name}): ${p}`);
+  console.log(`${name}: ${legal.length} legal Pokemon (Showdown ${commit.slice(0, 7)}, mod ${mod})`);
+  return {
+    showdown_commit: commit,
+    showdown_mod: mod,
+    legal,
+    learnsets: sorted(learnsets),
+    abilities: sorted(abilities),
+    accuracy: sorted(accuracy),
+  };
 }
 
-const sorted = table => Object.fromEntries(Object.entries(table).sort(([a], [b]) => a.localeCompare(b)));
+const regulations = {};
+for (const [name, source] of Object.entries(REGULATIONS)) {
+  regulations[name] = await buildRegulation(name, source);
+}
 writeFileSync(
   new URL('champions.json', OUT),
-  JSON.stringify(
-    {
-      showdown_commit: commit,
-      legal,
-      learnsets: sorted(learnsets),
-      abilities: sorted(abilities),
-      accuracy: sorted(accuracy),
-    },
-    null,
-    1
-  ) + '\n'
+  JSON.stringify({default_regulation: defaultRegulation, regulations}, null, 1) + '\n'
 );
-for (const p of problems) console.warn(`warning: ${p}`);
-console.log(`Wrote calc.js and data for ${Object.keys(learnsets).length} Pokemon, ${legal.length} legal (Showdown ${commit.slice(0, 7)})`);
+console.log(`Wrote calc.js and champions.json (default regulation ${defaultRegulation})`);

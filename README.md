@@ -103,6 +103,8 @@ npm install
 npm run build   # rewrites src/champcalc/data/calc.js and champions.json
 ```
 
-To pick up a Champions balance patch, update `@smogon/calc` in `js/package.json` and set
-`config.showdownCommit` to a newer Pokémon Showdown commit, rebuild, then run `pytest`.
+Each regulation (M-A, M-B, M-C, ...) is read from a pinned Pokémon Showdown commit and mod, listed
+under `config.regulations` in `js/package.json`; `Calculator("M-B")` picks one, and the default is
+`config.defaultRegulation`. To pick up a new regulation or balance patch, add or bump an entry there,
+update `@smogon/calc`, rebuild, then run `pytest`.
 The build prints a warning for any movepool entry or ability the calc does not know about.

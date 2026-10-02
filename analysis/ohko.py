@@ -43,6 +43,7 @@ Usage:
     python analysis/ohko.py --roster megas       # Megas only
     python analysis/ohko.py --doubles            # spread moves take 0.75x
     python analysis/ohko.py --items none         # no items, except Mega Stones
+    python analysis/ohko.py --regulation M-B     # an earlier regulation's roster and movepools
 """
 
 from __future__ import annotations
@@ -288,9 +289,9 @@ _roster: list[Entry] = []
 _doubles = False
 
 
-def _worker_init(roster: list[Entry], doubles: bool) -> None:
+def _worker_init(roster: list[Entry], doubles: bool, regulation: str | None) -> None:
     global _calc, _roster, _doubles
-    _calc, _roster, _doubles = Calculator(), roster, doubles
+    _calc, _roster, _doubles = Calculator(regulation), roster, doubles
 
 
 def _move(move: str) -> dict:
@@ -513,6 +514,7 @@ def attacker_task(index: int) -> tuple[list[dict], dict]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--roster", choices=("all", "megas"), default="all")
+    parser.add_argument("--regulation", help="e.g. M-A, M-B, M-C (default: the current one)")
     parser.add_argument("--doubles", action="store_true", help="doubles: spread moves take 0.75x damage")
     parser.add_argument("--items", choices=tuple(ITEMS), default="lifeorb",
                         help="what non-Megas attack with (Megas always hold their stone)")
@@ -529,7 +531,8 @@ def main() -> None:
     excluded = set()
     for name in filter(None, (m.strip() for m in args.exclude.split(","))):
         excluded |= RECHARGE_MOVES if name.lower() == "recharge" else {name}
-    roster = load_roster(Calculator(), args.roster, excluded, ITEMS[args.items])
+    calc = Calculator(args.regulation)
+    roster = load_roster(calc, args.roster, excluded, ITEMS[args.items])
     attackers = range(len(roster))[: args.limit]
     if args.attackers:
         wanted = {n.strip() for n in args.attackers.split(",")}
@@ -537,7 +540,7 @@ def main() -> None:
 
     start = time.time()
     rows, ranking = [], []
-    with Pool(args.processes, initializer=_worker_init, initargs=(roster, args.doubles)) as pool:
+    with Pool(args.processes, initializer=_worker_init, initargs=(roster, args.doubles, calc.regulation)) as pool:
         for done, (attacker_rows, entry) in enumerate(pool.imap_unordered(attacker_task, attackers), 1):
             rows.extend(attacker_rows)
             ranking.append(entry)
@@ -546,7 +549,7 @@ def main() -> None:
                   f"~{elapsed / done * (len(attackers) - done) / 60:.0f} min left", end="", file=sys.stderr)
     print(file=sys.stderr)
 
-    name = f"ohko_{args.roster}_{'doubles' if args.doubles else 'singles'}"
+    name = f"ohko_{calc.regulation}_{args.roster}_{'doubles' if args.doubles else 'singles'}"
     if args.items != "lifeorb":
         name += f"_items-{args.items}"
     if args.attackers or args.limit:
