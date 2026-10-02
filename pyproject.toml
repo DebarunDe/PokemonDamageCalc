@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "champcalc"
+version = "0.1.0"
+description = "Pokemon Champions damage calculator for Python, powered by @smogon/calc"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["mini-racer>=0.12"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+champcalc = "champcalc.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+champcalc = ["data/calc.js", "data/champions.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

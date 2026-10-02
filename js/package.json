@@ -1,0 +1,17 @@
+{
+  "name": "champcalc-js",
+  "private": true,
+  "description": "Builds the JS bundle and learnset data embedded in the champcalc Python package.",
+  "config": {
+    "showdownCommit": "1ce9b34f971867b1c63689b167641d9ec552a985"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@smogon/calc": "^0.12.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

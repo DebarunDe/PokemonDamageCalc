@@ -1,0 +1,122 @@
+import pytest
+
+from champcalc import CalcError, Calculator, Field, PokemonSet
+
+
+@pytest.fixture(scope="session")
+def calc() -> Calculator:
+    return Calculator()
+
+
+def test_damage_matches_hand_calculation(calc):
+    # Garchomp: Atk 130 + 32 SP + 20 = 182. Incineroar: HP 95 + 32 + 75 = 202, Def 90 + 2 + 20 = 112.
+    # Base damage 73, STAB 1.5, Ground vs Fire/Dark 2x -> 186 (85% roll) to 218 (100% roll).
+    result = calc.calculate(
+        PokemonSet("Garchomp", nature="Jolly", sp={"atk": 32, "spe": 32}),
+        PokemonSet("Incineroar", sp={"hp": 32, "def": 2}),
+        "Earthquake",
+    )
+    assert result.attacker["stats"]["atk"] == 182
+    assert result.defender["max_hp"] == 202
+    assert (result.min, result.max) == (186, 218)
+    assert len(result.rolls) == 16
+    assert result.rolls[0] == 186 and result.rolls[-1] == 218
+    assert result.max_percent == 107.9
+    assert "OHKO" in result.ko.text
+    assert result.warnings == []
+
+
+def test_stat_formula_uses_stat_points_and_nature(calc):
+    result = calc.calculate(
+        PokemonSet("Garchomp", nature="Jolly", sp={"hp": 2, "spe": 32}),
+        PokemonSet("Incineroar"),
+        "Earthquake",
+    )
+    stats = result.attacker["stats"]
+    assert stats["hp"] == 108 + 2 + 75
+    assert stats["spe"] == int((102 + 32 + 20) * 1.1)
+    assert stats["spa"] == int((80 + 20) * 0.9)
+
+
+def test_field_and_modifiers_change_damage(calc):
+    attacker = PokemonSet("Charizard", nature="Modest", sp={"spa": 32})
+    defender = PokemonSet("Garchomp")
+    plain = calc.calculate(attacker, defender, "Flamethrower")
+    assert calc.calculate(attacker, defender, "Flamethrower", Field(weather="sun")).max > plain.max
+    assert calc.calculate(attacker, defender, "Flamethrower", Field(light_screen=True)).max < plain.max
+    assert calc.calculate(attacker, defender, "Flamethrower", is_crit=True).max > plain.max
+    boosted = PokemonSet("Charizard", nature="Modest", sp={"spa": 32}, boosts={"spa": 2})
+    assert calc.calculate(boosted, defender, "Flamethrower").max > plain.max
+
+
+def test_immunity_gives_zero_damage(calc):
+    result = calc.calculate(PokemonSet("Garchomp"), PokemonSet("Corviknight"), "Earthquake")
+    assert (result.min, result.max) == (0, 0)
+    assert result.ko is None
+
+
+def test_mega_formes_share_base_movepool(calc):
+    assert calc.learnset("Garchomp-Mega") == calc.learnset("Garchomp")
+    assert "Earthquake" in calc.learnset("garchomp")
+
+
+def test_learnset_and_ability_warnings(calc):
+    result = calc.calculate(
+        PokemonSet("Incineroar", ability="Levitate"), PokemonSet("Garchomp"), "Draco Meteor"
+    )
+    assert any("cannot learn Draco Meteor" in w for w in result.warnings)
+    assert any("cannot have Levitate" in w for w in result.warnings)
+
+
+def test_species_info_lists_all_abilities(calc):
+    info = calc.species("incineroar")
+    assert info["name"] == "Incineroar"
+    assert info["types"] == ["Fire", "Dark"]
+    assert info["abilities"] == ["Blaze", "Intimidate"]
+    assert info["base_stats"]["atk"] == 115
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"species": "Notamon"}, "Unknown Pokemon"),
+        ({"species": "Garchomp", "item": "Not An Item"}, "Unknown item"),
+        ({"species": "Garchomp", "ability": "Not An Ability"}, "Unknown ability"),
+        ({"species": "Garchomp", "nature": "Grumpy"}, "Unknown nature"),
+    ],
+)
+def test_unknown_names_are_rejected(calc, kwargs, message):
+    with pytest.raises(CalcError, match=message):
+        calc.calculate(PokemonSet(**kwargs), PokemonSet("Incineroar"), "Earthquake")
+
+
+def test_unknown_and_status_moves_are_rejected(calc):
+    with pytest.raises(CalcError, match="Unknown move"):
+        calc.calculate(PokemonSet("Garchomp"), PokemonSet("Incineroar"), "Not A Move")
+    with pytest.raises(CalcError, match="status move"):
+        calc.calculate(PokemonSet("Garchomp"), PokemonSet("Incineroar"), "Swords Dance")
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"sp": {"atk": 33}}, "between 0 and 32"),
+        ({"sp": {"atk": 32, "spe": 32, "hp": 3}}, "maximum is 66"),
+        ({"sp": {"speed": 4}}, "Unknown stat"),
+        ({"boosts": {"atk": 7}}, "between -6 and"),
+        ({"boosts": {"hp": 1}}, "Unknown stat"),
+        ({"status": "sleepy"}, "Unknown status"),
+        ({"cur_hp_percent": 0}, "Current HP"),
+    ],
+)
+def test_invalid_sets_are_rejected(kwargs, message):
+    with pytest.raises(CalcError, match=message):
+        PokemonSet("Garchomp", **kwargs)
+
+
+def test_every_learnset_entry_is_a_known_move(calc):
+    known = set(calc.all_moves)
+    for species in calc.all_species:
+        moves = calc.learnset(species)
+        assert moves, f"{species} has no movepool"
+        assert set(moves) <= known, species
