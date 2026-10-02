@@ -1,0 +1,173 @@
+"""First-pass "undervalued" signals from usage and tournament results.
+
+For each Pokemon in a regulation:
+- usage: share of published Limitless teams that include it
+- win_rate: match win rate of those teams, shrunk toward the field average
+  (a 3-1 Pokemon shouldn't top the list)
+- conversion: its share of top-cut teams divided by its share of all teams
+  (above 1 = it makes top cut more often than its popularity predicts)
+- ladder_lift: Showdown best-of-1 usage at 1760+ divided by usage at all
+  ratings (above 1 = strong players use it more)
+
+performance is the average z-score of those three; undervalued is how far
+performance is above what its usage would predict (the residual of a fit of
+performance on log usage), so it doesn't just reward being rare.
+
+The backtest checks whether a regulation's undervalued scores predict which
+Pokemon gain usage in the next regulation, beyond simple regression to the
+mean.
+
+Usage:
+    python analysis/signals.py                   # M-C table + backtests
+    python analysis/signals.py --regulation M-B
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import sqlite3
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+DB = Path(__file__).parent / "data" / "meta.sqlite"
+OUT = Path(__file__).parent / "output"
+REGULATIONS = ("M-A", "M-B", "M-C")
+
+PRIOR_GAMES = 100       # win-rate shrinkage strength, in games
+PRIOR_TOP_CUT = 20      # top-cut shrinkage strength, in teams
+MIN_TEAMS = 15          # Pokemon on fewer published teams are left out
+MIN_LADDER_USAGE = 0.005
+
+
+def top_cut_size(players: int) -> int:
+    """Top cut for Swiss events of this size: top 12.5%, at least 4."""
+    return max(4, math.ceil(players * 0.125))
+
+
+def tournament_stats(db: sqlite3.Connection, regulation: str) -> pd.DataFrame:
+    members = pd.read_sql_query(
+        """SELECT m.tournament, m.player, m.placing, m.wins, m.losses, m.pokemon, t.players
+           FROM team_members m JOIN tournaments t ON t.id = m.tournament
+           WHERE t.regulation = ?""",
+        db, params=(regulation,),
+    )
+    if members.empty:
+        return pd.DataFrame()
+    teams = members.drop_duplicates(["tournament", "player"]).copy()
+    teams["top_cut"] = teams["placing"] <= teams["players"].map(top_cut_size)
+    n_teams, n_top = len(teams), int(teams["top_cut"].sum())
+    field_wr = teams["wins"].sum() / max(1, (teams["wins"] + teams["losses"]).sum())
+
+    members = members.drop_duplicates(["tournament", "player", "pokemon"])
+    members = members.merge(teams[["tournament", "player", "top_cut"]], on=["tournament", "player"])
+    g = members.groupby("pokemon")
+    stats = pd.DataFrame({
+        "teams": g.size(),
+        "wins": g["wins"].sum(),
+        "losses": g["losses"].sum(),
+        "top_cut_teams": g["top_cut"].sum(),
+    })
+    stats["usage"] = stats["teams"] / n_teams
+    stats["win_rate"] = (stats["wins"] + PRIOR_GAMES * field_wr) / (stats["wins"] + stats["losses"] + PRIOR_GAMES)
+    top_share = (stats["top_cut_teams"] + PRIOR_TOP_CUT * stats["usage"]) / (n_top + PRIOR_TOP_CUT)
+    stats["conversion"] = top_share / stats["usage"]
+    stats.attrs.update(n_teams=n_teams, n_top=n_top, field_wr=field_wr,
+                       n_tournaments=members["tournament"].nunique())
+    return stats
+
+
+def ladder_stats(db: sqlite3.Connection, regulation: str) -> pd.DataFrame:
+    usage = pd.read_sql_query(
+        """SELECT rating, pokemon, SUM(usage * battles) / SUM(battles) AS usage
+           FROM showdown_usage WHERE regulation = ? AND ladder = 'bo1'
+           GROUP BY rating, pokemon""",
+        db, params=(regulation,),
+    ).pivot(index="pokemon", columns="rating", values="usage")
+    if usage.empty or 0 not in usage or 1760 not in usage:
+        return pd.DataFrame()
+    out = pd.DataFrame({"ladder_usage": usage[0], "ladder_usage_1760": usage[1760]})
+    out = out[out["ladder_usage"] >= MIN_LADDER_USAGE].fillna(0)
+    out["ladder_lift"] = (out["ladder_usage_1760"] + 0.001) / (out["ladder_usage"] + 0.001)
+    return out
+
+
+def zscore(s: pd.Series) -> pd.Series:
+    return (s - s.mean()) / (s.std(ddof=0) or 1)
+
+
+def signals(db: sqlite3.Connection, regulation: str) -> pd.DataFrame:
+    t = tournament_stats(db, regulation)
+    if t.empty:
+        return t
+    df = t[t["teams"] >= MIN_TEAMS].join(ladder_stats(db, regulation), how="left")
+    parts = [zscore(df["win_rate"]), zscore(np.log(df["conversion"]))]
+    if df["ladder_lift"].notna().any():
+        parts.append(zscore(np.log(df["ladder_lift"])).fillna(0))
+    df["performance"] = sum(parts) / len(parts)
+    # Residual of performance on log usage: what usage alone doesn't explain.
+    x = np.log(df["usage"])
+    slope, intercept = np.polyfit(x, df["performance"], 1)
+    df["undervalued"] = df["performance"] - (slope * x + intercept)
+    df.attrs = t.attrs
+    return df.sort_values("undervalued", ascending=False)
+
+
+def backtest(db: sqlite3.Connection, before: str, after: str) -> dict | None:
+    """Does `before`'s undervalued score predict usage change into `after`,
+    after accounting for regression to the mean (log usage in `before`)?"""
+    a, b = signals(db, before), tournament_stats(db, after)
+    if a.empty or b.empty:
+        return None
+    df = a[["usage", "undervalued", "performance"]].join(b[["usage"]], rsuffix="_after", how="inner")
+    df["change"] = np.log(df["usage_after"]) - np.log(df["usage"])
+    # Remove the part of the change explained by starting usage alone.
+    x = np.log(df["usage"])
+    slope, intercept = np.polyfit(x, df["change"], 1)
+    df["change_beyond_usage"] = df["change"] - (slope * x + intercept)
+    top = df.nlargest(15, "undervalued")
+    return {
+        "pokemon": len(df),
+        "spearman_undervalued_vs_change": df["undervalued"].corr(df["change_beyond_usage"], method="spearman"),
+        "spearman_performance_vs_change": df["performance"].corr(df["change_beyond_usage"], method="spearman"),
+        "top15_median_change_beyond_usage": top["change_beyond_usage"].median(),
+        "top15": top,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--regulation", default="M-C", choices=REGULATIONS)
+    parser.add_argument("--top", type=int, default=25)
+    args = parser.parse_args()
+
+    db = sqlite3.connect(DB)
+    df = signals(db, args.regulation)
+    if df.empty:
+        raise SystemExit(f"No tournament data for {args.regulation}; run analysis/ingest.py first")
+    OUT.mkdir(exist_ok=True)
+    df.to_csv(OUT / f"signals_{args.regulation}.csv")
+    a = df.attrs
+    print(f"{args.regulation}: {a['n_tournaments']} tournaments, {a['n_teams']} published teams, "
+          f"{a['n_top']} top-cut teams, field win rate {a['field_wr']:.3f}")
+    cols = ["usage", "win_rate", "conversion", "ladder_usage_1760", "ladder_lift", "performance", "undervalued"]
+    with pd.option_context("display.width", 160, "display.max_columns", 20, "display.float_format", "{:.3f}".format):
+        print(f"\nMost undervalued (performance above what usage predicts):\n{df[cols].head(args.top)}")
+        print(f"\nMost overvalued:\n{df[cols].tail(10)}")
+
+    for before, after in zip(REGULATIONS, REGULATIONS[1:]):
+        result = backtest(db, before, after)
+        if not result:
+            continue
+        print(f"\nBacktest {before} -> {after} ({result['pokemon']} Pokemon in both):")
+        print(f"  Spearman(undervalued, usage change beyond mean reversion) = "
+              f"{result['spearman_undervalued_vs_change']:.3f}")
+        print(f"  Spearman(performance, same) = {result['spearman_performance_vs_change']:.3f}")
+        print(f"  Top 15 undervalued: median change beyond mean reversion = "
+              f"{result['top15_median_change_beyond_usage']:+.2f} log-usage")
+
+
+if __name__ == "__main__":
+    main()

@@ -222,3 +222,6 @@ node_modules/
 
 # Analysis output
 analysis/output/
+
+# Downloaded usage and tournament data
+analysis/data/
