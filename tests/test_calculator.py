@@ -261,3 +261,15 @@ def test_multi_hit_flag(calc):
     assert calc.move("Bullet Seed")["multi_hit"] is True
     assert calc.move("Dual Wingbeat")["multi_hit"] is True
     assert calc.move("Earthquake")["multi_hit"] is False
+
+
+def test_rivalry_depends_on_gender(calc):
+    def hit(attacker_gender, defender_gender):
+        return calc.calculate(
+            PokemonSet("Pyroar", ability="Rivalry", gender=attacker_gender),
+            PokemonSet("Incineroar", gender=defender_gender), "Flamethrower",
+        ).max
+    neutral = calc.calculate(PokemonSet("Pyroar", ability="Unnerve"), PokemonSet("Incineroar"), "Flamethrower").max
+    assert hit("M", "M") > neutral > hit("M", "F")
+    with pytest.raises(CalcError, match="Gender"):
+        PokemonSet("Pyroar", gender="X")

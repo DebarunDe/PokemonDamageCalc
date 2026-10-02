@@ -26095,7 +26095,8 @@
       // Champions Stat Points are passed through the calc's `evs` field.
       evs: set.sp || {},
       boosts: set.boosts || {},
-      status: set.status || ""
+      status: set.status || "",
+      gender: set.gender || void 0
     };
     if (set.cur_hp_percent != null) {
       const max = new import_calc.Pokemon(gen, species, options).maxHP();
@@ -26261,7 +26262,9 @@
         base_stats: s.baseStats,
         weight_kg: s.weightkg,
         other_formes: s.otherFormes || [],
-        mega_stone: MEGA_STONES[s.name] || null
+        mega_stone: MEGA_STONES[s.name] || null,
+        // 'M', 'F' or 'N' (genderless) when fixed, null when it can be either.
+        gender: s.gender || null
       };
     }),
     move: wrap(({ name }) => {

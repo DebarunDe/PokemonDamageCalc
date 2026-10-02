@@ -20,9 +20,12 @@ attacker is ranked with whichever single ability OHKOs the most.
 
 The field follows from the abilities: weather and terrain setters apply (when
 both set weather, the slower Pokemon's wins because abilities activate in
-speed order), Intimidate lowers a physical attacker's Attack (with the usual
-immunities and Contrary/Defiant), Trace copies the opponent's ability, and
-Sturdy and Disguise stop OHKOs from full HP (the calc itself ignores both).
+speed order; Cloud Nine cancels it), Intimidate lowers a physical attacker's
+Attack (with the usual immunities, Contrary/Defiant, and Competitive's +2 Sp.
+Atk), Trace copies the opponent's ability, Queenly Majesty, Armor Tail and
+Psychic Terrain block priority moves, Rivalry assumes the worse gender pairing,
+and Sturdy and Disguise stop OHKOs from full HP (the calc ignores both). Ditto
+is skipped: Imposter turns it into its opponent.
 Moves that cannot OHKO on the first turn of a fresh matchup are left out (see
 EXCLUDED_MOVES).
 
@@ -102,6 +105,12 @@ INTIMIDATE_IMMUNE = {
 INTIMIDATE_RAISES = {"Contrary", "Defiant", "Guard Dog"}  # net +1 Attack
 UNTRACEABLE = {"Trace", "Stance Change", "Disguise", "Zero to Hero", "Forecast", "Ice Face"}
 MOLD_BREAKERS = {"Mold Breaker", "Teravolt", "Turboblaze"}
+WEATHER_NEGATORS = {"Cloud Nine", "Air Lock"}
+# Block priority moves aimed at the holder (Psychic Terrain does for grounded targets).
+PRIORITY_BLOCKERS = {"Queenly Majesty", "Armor Tail", "Dazzling"}
+NOT_GROUNDED = {"Levitate", "Eelevate"}
+# Imposter copies its opponent, which the calc cannot model.
+SKIPPED_SPECIES = {"Ditto": "Imposter transforms it into its opponent"}
 
 RELIABLE_ACCURACY = 90
 # Weather that changes accuracy: (move, weather) -> accuracy.
@@ -125,6 +134,8 @@ class Entry:
     stone: str | None
     speed: int  # with no Speed investment, used for weather order
     moves: tuple[str, ...]
+    types: tuple[str, ...] = ()
+    gender: str | None = None  # fixed gender ('M', 'F', 'N'), or None when it can be either
 
     @property
     def attack_item(self) -> str | None:
@@ -141,6 +152,17 @@ def intimidate_stage(target_ability: str) -> int:
     if target_ability in INTIMIDATE_RAISES:
         return 1
     return -1
+
+
+def rivalry_genders(attacker: str | None, defender: str | None) -> tuple[str | None, str | None]:
+    """Genders for a Rivalry attacker: it matches a single-gender target, but a
+    target that can be either gender is assumed to be the opposite one (0.75x)."""
+    if defender in ("M", "F"):
+        return attacker or defender, defender
+    if defender == "N":
+        return attacker, "N"
+    mine = attacker if attacker in ("M", "F") else "M"
+    return mine, {"M": "F", "F": "M"}[mine]
 
 
 def effective_abilities(ability_a: str, ability_d: str) -> tuple[str, str]:
@@ -180,7 +202,7 @@ def accuracy(move: str, base: int | bool, category: str, weather: str | None,
 
 
 def load_roster(calc: Calculator, roster: str, excluded: set[str]) -> list[Entry]:
-    names = calc.legal_species
+    names = [n for n in calc.legal_species if n not in SKIPPED_SPECIES]
     if roster == "megas":
         names = [n for n in names if "-Mega" in n]
     move_info: dict[str, dict] = {}
@@ -200,6 +222,8 @@ def load_roster(calc: Calculator, roster: str, excluded: set[str]) -> list[Entry
             stone=info["mega_stone"],
             speed=info["base_stats"]["spe"] + 20,
             moves=tuple(moves),
+            types=tuple(info["types"]),
+            gender=info["gender"],
         ))
     return entries
 
@@ -217,8 +241,9 @@ class Setup:
     terrain: str | None
     moves: list[int]  # indices into the attacker's move list
     accuracy: dict[int, float]
-    attacker_atk: int
+    attacker_boosts: dict[str, int]
     defender_atk: int
+    genders: tuple[str | None, str | None]
     block: str  # "", "Sturdy" or "Disguise": stops single-hit OHKOs from full HP
     notes: list[str]
 
@@ -245,24 +270,42 @@ def setups_for(a: Entry, d: Entry) -> list[Setup]:
     for ability_a in a.abilities:
         for ability_d in d.abilities:
             eff_a, eff_d = effective_abilities(ability_a, ability_d)
+            notes = []
+            if eff_a != ability_a:
+                notes.append(f"{a.name} traces {eff_a}")
+            if eff_d != ability_d:
+                notes.append(f"{d.name} traces {eff_d}")
             weather, weather_note = resolve_condition(a.speed, d.speed, eff_a, eff_d, WEATHER_ABILITIES)
+            if weather_note:
+                notes.append(f"{weather} ({weather_note})")
+            if weather and {eff_a, eff_d} & WEATHER_NEGATORS:
+                notes.append(f"{weather} cancelled by {', '.join(sorted({eff_a, eff_d} & WEATHER_NEGATORS))}")
+                weather = None
             terrain, _ = resolve_condition(a.speed, d.speed, eff_a, eff_d, TERRAIN_ABILITIES)
             sun = weather == "Sun" or eff_a == "Mega Sol"
+            grounded = "Flying" not in d.types and eff_d not in NOT_GROUNDED
+            no_priority = eff_d in PRIORITY_BLOCKERS or (terrain == "Psychic" and grounded)
+            if no_priority:
+                notes.append("priority moves blocked")
             moves = [
                 i for i, m in enumerate(a.moves)
                 if (m not in SOLAR_MOVES or sun)
                 and (m not in RAIN_CHARGE_MOVES or weather == "Rain")
                 and (m not in TERRAIN_MOVES or terrain)
+                and not (no_priority and _move(m)["priority"] > 0)
             ]
-            notes = [f"{weather} ({weather_note})"] if weather_note else []
-            if eff_a != ability_a:
-                notes.append(f"{a.name} traces {eff_a}")
-            if eff_d != ability_d:
-                notes.append(f"{d.name} traces {eff_d}")
-            attacker_atk = intimidate_stage(eff_a) if eff_d == "Intimidate" else 0
+            attacker_boosts = {}
+            if eff_d == "Intimidate":
+                attacker_boosts["atk"] = intimidate_stage(eff_a)
+                if eff_a == "Competitive":
+                    attacker_boosts["spa"] = 2
+                attacker_boosts = {k: v for k, v in attacker_boosts.items() if v}
+                if attacker_boosts:
+                    notes.append("Intimidate: attacker " + ", ".join(f"{k} {v:+d}" for k, v in attacker_boosts.items()))
             defender_atk = intimidate_stage(eff_d) if eff_a == "Intimidate" else 0
-            if attacker_atk:
-                notes.append(f"Intimidate: attacker Atk {attacker_atk:+d}")
+            genders = rivalry_genders(a.gender, d.gender) if eff_a == "Rivalry" else (None, None)
+            if eff_a == "Rivalry":
+                notes.append(f"Rivalry: {genders[0]} vs {genders[1]}")
             block = eff_d if eff_d in ("Sturdy", "Disguise") and eff_a not in MOLD_BREAKERS else ""
             if block:
                 notes.append(f"{block} blocks a single-hit OHKO")
@@ -272,7 +315,7 @@ def setups_for(a: Entry, d: Entry) -> list[Setup]:
                 weather, terrain, moves,
                 {i: accuracy(a.moves[i], _move(a.moves[i])["accuracy"], _move(a.moves[i])["category"],
                              weather, eff_a, eff_d) for i in moves},
-                attacker_atk, defender_atk, block, notes,
+                attacker_boosts, defender_atk, genders, block, notes,
             ))
     return out
 
@@ -292,12 +335,12 @@ def evaluate(a: Entry, d: Entry) -> dict[tuple, dict]:
                     a.name, ability=s.effective_a or None, item=a.attack_item,
                     nature=BOOSTING_NATURE[off_stat] if a_tier == "max+" and not uses_target else NEUTRAL_NATURE,
                     sp={} if a_tier == "none" or uses_target else {off_stat: 32},
-                    boosts={"atk": s.attacker_atk} if s.attacker_atk else {},
+                    boosts=s.attacker_boosts, gender=s.genders[0],
                 )
                 defender = PokemonSet(
                     d.name, ability=s.effective_d or None, item=d.defense_item, nature=NEUTRAL_NATURE,
                     sp={"none": {}, "hp": {"hp": 32}, "bulk": {"hp": 32, def_stat: 32}}[d_tier],
-                    boosts={"atk": s.defender_atk} if s.defender_atk else {},
+                    boosts={"atk": s.defender_atk} if s.defender_atk else {}, gender=s.genders[1],
                 )
                 jobs.append((attacker, defender, s.field, idx))
                 keys.append((s_index, a_tier, d_tier, idx))

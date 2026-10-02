@@ -54,3 +54,14 @@ def test_accuracy_adjustments():
     # Every hit rolls accuracy, unless Skill Link makes it one check.
     assert acc("Triple Axel", 90, "Physical", None, "", "") == 72.9
     assert acc("Population Bomb", 90, "Physical", None, "Skill Link", "") == 90
+
+
+def test_rivalry_assumes_the_worse_gender_pairing():
+    # A target that can be either gender is assumed to be the opposite one.
+    assert ohko.rivalry_genders(None, None) == ("M", "F")
+    assert ohko.rivalry_genders("F", None) == ("F", "M")
+    # A single-gender target is matched.
+    assert ohko.rivalry_genders(None, "F") == ("F", "F")
+    assert ohko.rivalry_genders("M", "F") == ("M", "F")
+    # Genderless targets are unaffected.
+    assert ohko.rivalry_genders(None, "N") == (None, "N")

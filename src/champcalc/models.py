@@ -45,6 +45,7 @@ class PokemonSet:
     boosts: dict[str, int] = field(default_factory=dict)
     status: str = ""
     cur_hp_percent: float | None = None
+    gender: str | None = None  # 'M', 'F' or 'N'; matters for Rivalry
 
     def __post_init__(self) -> None:
         self.sp = _check_stats(self.sp, STATS, "SP")
@@ -64,6 +65,9 @@ class PokemonSet:
         if status not in STATUSES:
             raise CalcError(f"Unknown status '{self.status}'; expected one of {', '.join(s for s in STATUSES if s)}")
         self.status = STATUSES[status]
+
+        if self.gender is not None and self.gender not in ("M", "F", "N"):
+            raise CalcError(f"Gender must be 'M', 'F' or 'N', got {self.gender!r}")
 
         if self.cur_hp_percent is not None and not 0 < self.cur_hp_percent <= 100:
             raise CalcError(f"Current HP must be above 0% and at most 100%, got {self.cur_hp_percent}")

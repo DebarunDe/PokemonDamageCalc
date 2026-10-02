@@ -32,6 +32,7 @@ function makePokemon(set) {
     evs: set.sp || {},
     boosts: set.boosts || {},
     status: set.status || '',
+    gender: set.gender || undefined,
   };
   if (set.cur_hp_percent != null) {
     const max = new Pokemon(gen, species, options).maxHP();
@@ -222,6 +223,8 @@ globalThis.champcalc = {
       weight_kg: s.weightkg,
       other_formes: s.otherFormes || [],
       mega_stone: MEGA_STONES[s.name] || null,
+      // 'M', 'F' or 'N' (genderless) when fixed, null when it can be either.
+      gender: s.gender || null,
     };
   }),
   move: wrap(({name}) => {
