@@ -71,16 +71,28 @@ class PokemonSet:
 
 @dataclass
 class Field:
-    """Battle conditions. Screens apply to the defender's side."""
+    """Battle conditions.
+
+    Reflect, Light Screen, Aurora Veil and Friend Guard protect the defender's
+    side. Helping Hand powers up the attacker.
+    """
 
     weather: str | None = None
     terrain: str | None = None
     reflect: bool = False
     light_screen: bool = False
+    doubles: bool = False
+    aurora_veil: bool = False
+    helping_hand: bool = False
+    friend_guard: bool = False
 
     def __post_init__(self) -> None:
         self.weather = _normalize(self.weather, WEATHERS, "weather")
         self.terrain = _normalize(self.terrain, TERRAINS, "terrain")
+        if not self.doubles:
+            for name in ("helping_hand", "friend_guard"):
+                if getattr(self, name):
+                    raise CalcError(f"{name.replace('_', ' ').title()} needs an ally, so it only applies in doubles")
 
 
 def _normalize(value: str | None, options: dict[str, str], what: str) -> str | None:

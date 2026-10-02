@@ -52,3 +52,51 @@ def test_moves_and_info_commands(capsys):
     assert "  Earthquake" in capsys.readouterr().out
     assert main(["info", "incineroar"]) == 0
     assert "Abilities: Blaze, Intimidate" in capsys.readouterr().out
+
+
+def test_doubles_flags(capsys):
+    base = ["calc", "Garchomp", "Earthquake", "Incineroar", "--a-nature", "Jolly",
+            "--a-sp", "32 Atk", "--d-sp", "32 HP / 2 Def", "--doubles"]
+    assert main(base) == 0
+    assert "138-164" in capsys.readouterr().out
+    assert main([*base, "--single-target"]) == 0
+    assert "186-218" in capsys.readouterr().out
+    assert main([*base, "--helping-hand", "--friend-guard", "--aurora-veil"]) == 0
+    out = capsys.readouterr().out
+    assert "Helping Hand" in out and "Friend Guard" in out and "Aurora Veil" in out
+
+
+def test_helping_hand_requires_doubles(capsys):
+    assert main(["calc", "Garchomp", "Earthquake", "Incineroar", "--helping-hand"]) == 1
+    assert "only applies in doubles" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "flags, expected",
+    [
+        (["--a-atk", "+2"], "+2 0 Atk Garchomp"),
+        (["--a-atk", "-1"], "-1 0 Atk Garchomp"),
+        (["--d-def", "+6"], "vs. +6 0 HP / 0 Def"),
+        (["--a-boosts", "+1 Atk", "--d-def", "-2"], "+1 0 Atk Garchomp Earthquake vs. -2 0 HP"),
+    ],
+)
+def test_physical_stage_flags(capsys, flags, expected):
+    assert main(["calc", "Garchomp", "Earthquake", "Incineroar", *flags]) == 0
+    assert expected in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("attack, defense", [("--a-spa", "--d-spd"), ("--a-spatk", "--d-spdef")])
+def test_special_stage_flags_and_aliases(capsys, attack, defense):
+    assert main(["calc", "Charizard", "Flamethrower", "Garchomp", attack, "+1", defense, "-2"]) == 0
+    assert "+1 0 SpA Charizard Flamethrower vs. -2 0 HP / 0 SpD Garchomp" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("value", ["+7", "-7", "two"])
+def test_stage_flags_reject_bad_values(value):
+    with pytest.raises(SystemExit):
+        main(["calc", "Garchomp", "Earthquake", "Incineroar", "--a-atk", value])
+
+
+def test_conflicting_stage_flags(capsys):
+    assert main(["calc", "Garchomp", "Earthquake", "Incineroar", "--a-boosts", "+1 Atk", "--a-atk", "+2"]) == 1
+    assert "different atk stages" in capsys.readouterr().err

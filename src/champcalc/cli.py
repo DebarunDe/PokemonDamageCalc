@@ -43,6 +43,46 @@ def _add_side_options(parser: argparse.ArgumentParser, prefix: str, who: str) ->
     group.add_argument(f"--{prefix}-boosts", default="", help="stat stages, e.g. '+1 Atk' or 'def=-1'")
     group.add_argument(f"--{prefix}-status", default="", help="brn, par, psn, tox, slp or frz")
     group.add_argument(f"--{prefix}-hp", type=float, help="current HP as a percentage")
+    for stat, aliases, label in _BOOST_FLAGS:
+        group.add_argument(
+            *(f"--{prefix}-{name}" for name in (stat, *aliases)),
+            dest=f"{prefix}_boost_{stat}",
+            type=_stage,
+            metavar="STAGE",
+            help=f"{label} stage from -6 to +6, e.g. +2",
+        )
+
+
+_BOOST_FLAGS = [
+    ("atk", (), "Attack"),
+    ("def", (), "Defense"),
+    ("spa", ("spatk",), "Sp. Atk"),
+    ("spd", ("spdef",), "Sp. Def"),
+    ("spe", (), "Speed"),
+]
+
+
+def _stage(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{text}' is not a stat stage; use a number like +2 or -1") from None
+    if not -6 <= value <= 6:
+        raise argparse.ArgumentTypeError(f"stat stages go from -6 to +6, got {text}")
+    return value
+
+
+def _boosts(args: argparse.Namespace, prefix: str) -> dict[str, int]:
+    """Combine --x-boosts with the per-stat flags such as --x-def +2."""
+    boosts = parse_stat_spread(getattr(args, f"{prefix}_boosts"))
+    for stat, _, _ in _BOOST_FLAGS:
+        value = getattr(args, f"{prefix}_boost_{stat}")
+        if value is None:
+            continue
+        if boosts.get(stat, value) != value:
+            raise CalcError(f"--{prefix}-boosts and --{prefix}-{stat} give different {stat} stages")
+        boosts[stat] = value
+    return boosts
 
 
 def _side(args: argparse.Namespace, prefix: str, species: str) -> PokemonSet:
@@ -53,7 +93,7 @@ def _side(args: argparse.Namespace, prefix: str, species: str) -> PokemonSet:
         ability=get("ability"),
         item=get("item"),
         sp=parse_stat_spread(get("sp")),
-        boosts=parse_stat_spread(get("boosts")),
+        boosts=_boosts(args, prefix),
         status=get("status"),
         cur_hp_percent=get("hp"),
     )
@@ -79,6 +119,13 @@ def _build_parser() -> argparse.ArgumentParser:
     conditions.add_argument("--terrain", help="Electric, Grassy, Psychic or Misty")
     conditions.add_argument("--reflect", action="store_true", help="Reflect on the defender's side")
     conditions.add_argument("--light-screen", action="store_true", help="Light Screen on the defender's side")
+    conditions.add_argument("--aurora-veil", action="store_true", help="Aurora Veil on the defender's side")
+    doubles = calc.add_argument_group("doubles options")
+    doubles.add_argument("--doubles", action="store_true", help="doubles battle: spread moves take 0.75x damage")
+    doubles.add_argument("--single-target", action="store_true",
+                         help="a spread move hits only one target (no spread penalty)")
+    doubles.add_argument("--helping-hand", action="store_true", help="the attacker's ally used Helping Hand")
+    doubles.add_argument("--friend-guard", action="store_true", help="the defender's ally has Friend Guard")
     calc.add_argument("--rolls", action="store_true", help="show all damage rolls")
     calc.add_argument("--json", action="store_true", help="print the full result as JSON")
 
@@ -96,13 +143,23 @@ def _run(args: argparse.Namespace, calc: Calculator) -> None:
             _side(args, "a", args.attacker),
             _side(args, "d", args.defender),
             args.move,
-            Field(args.weather, args.terrain, args.reflect, args.light_screen),
+            Field(
+                weather=args.weather,
+                terrain=args.terrain,
+                reflect=args.reflect,
+                light_screen=args.light_screen,
+                doubles=args.doubles,
+                aurora_veil=args.aurora_veil,
+                helping_hand=args.helping_hand,
+                friend_guard=args.friend_guard,
+            ),
             is_crit=args.crit,
+            spread=False if args.single_target else None,
         )
         if args.json:
             print(json.dumps(result.to_dict(), indent=2))
             return
-        print(result.description)
+        print(result.description + (" (spread)" if result.move["spread"] else ""))
         if args.rolls:
             print("Rolls: " + ", ".join(map(str, result.rolls)))
         for warning in result.warnings:
