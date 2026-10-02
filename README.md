@@ -37,15 +37,34 @@ $ champcalc moves garchomp-mega
 | `--a-ability` | `--d-ability` | defaults to the Pokémon's first ability |
 | `--a-item` | `--d-item` | e.g. `"Life Orb"` |
 | `--a-sp` | `--d-sp` | Stat Points: `"32 Atk / 32 Spe"` or `atk=32,spe=32` |
-| `--a-boosts` | `--d-boosts` | stat stages: `"+1 Atk"` or `def=-1` |
+| `--a-atk` `--a-def` `--a-spa` `--a-spd` `--a-spe` | `--d-atk` `--d-def` `--d-spa` `--d-spd` `--d-spe` | one stat stage, -6 to +6, e.g. `--d-def +2` (`--a-spatk`/`--a-spdef` also work) |
+| `--a-boosts` | `--d-boosts` | several stages at once: `"+1 Atk / -1 Def"` or `def=-1` |
 | `--a-status` | `--d-status` | `brn`, `par`, `psn`, `tox`, `slp`, `frz` |
 | `--a-hp` | `--d-hp` | current HP as a percentage |
 
 Field options: `--crit`, `--weather {Sun,Rain,Sand,Snow}`, `--terrain {Electric,Grassy,Psychic,Misty}`,
-`--reflect`, `--light-screen` (screens are on the defender's side). Add `--rolls` to print all 16
-damage rolls or `--json` for the full result.
+`--reflect`, `--light-screen`, `--aurora-veil` (screens are on the defender's side). Add `--rolls` to
+print all 16 damage rolls or `--json` for the full result.
 
-Battles are singles at level 50, which Champions always uses. Stat Points are capped at 32 per stat
+### Doubles
+
+```console
+$ champcalc calc Garchomp Earthquake Incineroar --a-nature Jolly --a-sp "32 Atk" --d-sp "32 HP / 2 Def" --doubles
+32 Atk Garchomp Earthquake vs. 32 HP / 2 Def Incineroar: 138-164 (68.3 - 81.1%) -- guaranteed 2HKO (spread)
+```
+
+| Option | Meaning |
+|---|---|
+| `--doubles` | doubles battle: moves that hit several targets take 0.75x damage, screens cut damage to about 2/3 instead of 1/2 |
+| `--single-target` | a spread move has only one target left, so no spread penalty |
+| `--helping-hand` | the attacker's ally used Helping Hand |
+| `--friend-guard` | the defender's ally has Friend Guard |
+
+Spread moves are marked `(spread)` in the output. Steely Spirit from an ally is not offered:
+`@smogon/calc`'s Champions mechanics do not apply it yet. Battery, Power Spot and Flower Gift are not
+in Champions.
+
+Battles are at level 50, which Champions always uses. Stat Points are capped at 32 per stat
 and 66 in total. Unknown or non-Champions Pokémon, moves, items, abilities and natures are errors.
 A move the attacker cannot learn or an ability it cannot have is a warning.
 
@@ -61,6 +80,8 @@ result = calc.calculate(
     "Earthquake",
     Field(weather="sand"),
 )
+# Doubles: Field(doubles=True, helping_hand=True, friend_guard=True, aurora_veil=True)
+# A spread move with one target left: calc.calculate(..., spread=False)
 result.min, result.max            # 186, 218
 result.min_percent, result.max_percent
 result.rolls                      # all 16 rolls

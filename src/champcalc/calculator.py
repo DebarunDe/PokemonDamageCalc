@@ -52,8 +52,14 @@ class Calculator:
         move: str,
         field: Field | None = None,
         is_crit: bool = False,
+        spread: bool | None = None,
     ) -> Result:
-        """Damage dealt by `attacker` using `move` on `defender` in a singles battle."""
+        """Damage dealt by `attacker` using `move` on `defender`.
+
+        Pass `Field(doubles=True)` for a doubles battle. There, moves that hit
+        several targets (Earthquake, Heat Wave, ...) take the 0.75x spread
+        penalty; set `spread=False` when only one target is left.
+        """
         data = self._call(
             "calculate",
             {
@@ -62,6 +68,7 @@ class Calculator:
                 "move": move,
                 "field": asdict(field or Field()),
                 "is_crit": is_crit,
+                "spread": spread,
             },
         )
         warnings = []

@@ -26075,6 +26075,7 @@
   // entry.js
   var import_calc = __toESM(require_dist());
   var gen = import_calc.Generations.get(0);
+  var SPREAD_TARGETS = ["allAdjacent", "allAdjacentFoes"];
   var CalcError = class extends Error {
   };
   function toID(text) {
@@ -26125,16 +26126,30 @@
     const attacker = makePokemon(request.attacker);
     const defender = makePokemon(request.defender);
     const moveName = resolve(gen.moves, "move", request.move);
-    const move = new import_calc.Move(gen, moveName, { isCrit: !!request.is_crit });
+    const f = request.field || {};
+    const doubles = !!f.doubles;
+    const isSpreadMove = SPREAD_TARGETS.includes(gen.moves.get(toID(moveName)).target);
+    if (request.spread === true && !(doubles && isSpreadMove)) {
+      throw new CalcError(doubles ? `'${moveName}' only hits one target` : `Spread damage only applies in doubles`);
+    }
+    const move = new import_calc.Move(gen, moveName, {
+      isCrit: !!request.is_crit,
+      overrides: request.spread === false && isSpreadMove ? { target: "normal" } : void 0
+    });
     if (move.category === "Status") {
       throw new CalcError(`'${moveName}' is a status move and deals no direct damage`);
     }
-    const f = request.field || {};
     const field = new import_calc.Field({
-      gameType: "Singles",
+      gameType: doubles ? "Doubles" : "Singles",
       weather: f.weather || void 0,
       terrain: f.terrain || void 0,
-      defenderSide: { isReflect: !!f.reflect, isLightScreen: !!f.light_screen }
+      attackerSide: { isHelpingHand: !!f.helping_hand },
+      defenderSide: {
+        isReflect: !!f.reflect,
+        isLightScreen: !!f.light_screen,
+        isAuroraVeil: !!f.aurora_veil,
+        isFriendGuard: !!f.friend_guard
+      }
     });
     const result = (0, import_calc.calculate)(gen, attacker, defender, move, field);
     const [min, max] = result.range();
@@ -26151,7 +26166,13 @@
     }
     return {
       description,
-      move: { name: move.name, type: move.type, category: move.category, base_power: move.bp },
+      move: {
+        name: move.name,
+        type: move.type,
+        category: move.category,
+        base_power: move.bp,
+        spread: doubles && SPREAD_TARGETS.includes(move.target)
+      },
       attacker: describePokemon(attacker),
       defender: describePokemon(defender),
       rolls,
@@ -26186,7 +26207,14 @@
     }),
     move: wrap(({ name }) => {
       const m = gen.moves.get(toID(resolve(gen.moves, "move", name)));
-      return { name: m.name, type: m.type, category: m.category, base_power: m.bp, priority: m.priority || 0 };
+      return {
+        name: m.name,
+        type: m.type,
+        category: m.category,
+        base_power: m.bp,
+        priority: m.priority || 0,
+        spread: SPREAD_TARGETS.includes(m.target)
+      };
     }),
     list: wrap(({ kind }) => {
       const table = { species: gen.species, moves: gen.moves, items: gen.items, abilities: gen.abilities, natures: gen.natures }[kind];

@@ -6,6 +6,8 @@ import {calculate, Field, Generations, Move, Pokemon} from '@smogon/calc';
 // In @smogon/calc, generation 0 is Pokemon Champions.
 const gen = Generations.get(0);
 
+const SPREAD_TARGETS = ['allAdjacent', 'allAdjacentFoes'];
+
 class CalcError extends Error {}
 
 function toID(text) {
@@ -65,16 +67,38 @@ function runCalc(request) {
   const attacker = makePokemon(request.attacker);
   const defender = makePokemon(request.defender);
   const moveName = resolve(gen.moves, 'move', request.move);
-  const move = new Move(gen, moveName, {isCrit: !!request.is_crit});
+  const f = request.field || {};
+  const doubles = !!f.doubles;
+
+  // Spread moves (Earthquake, Heat Wave, ...) take 0.75x damage in doubles when
+  // they hit more than one target. `spread: false` models a spread move with only
+  // one target left; `spread: true` on a single-target move is a mistake. The
+  // override goes through `overrides` because the calc clones the move.
+  const isSpreadMove = SPREAD_TARGETS.includes(gen.moves.get(toID(moveName)).target);
+  if (request.spread === true && !(doubles && isSpreadMove)) {
+    throw new CalcError(doubles ?
+      `'${moveName}' only hits one target` :
+      `Spread damage only applies in doubles`);
+  }
+  const move = new Move(gen, moveName, {
+    isCrit: !!request.is_crit,
+    overrides: request.spread === false && isSpreadMove ? {target: 'normal'} : undefined,
+  });
   if (move.category === 'Status') {
     throw new CalcError(`'${moveName}' is a status move and deals no direct damage`);
   }
-  const f = request.field || {};
+
   const field = new Field({
-    gameType: 'Singles',
+    gameType: doubles ? 'Doubles' : 'Singles',
     weather: f.weather || undefined,
     terrain: f.terrain || undefined,
-    defenderSide: {isReflect: !!f.reflect, isLightScreen: !!f.light_screen},
+    attackerSide: {isHelpingHand: !!f.helping_hand},
+    defenderSide: {
+      isReflect: !!f.reflect,
+      isLightScreen: !!f.light_screen,
+      isAuroraVeil: !!f.aurora_veil,
+      isFriendGuard: !!f.friend_guard,
+    },
   });
 
   const result = calculate(gen, attacker, defender, move, field);
@@ -92,7 +116,13 @@ function runCalc(request) {
   }
   return {
     description,
-    move: {name: move.name, type: move.type, category: move.category, base_power: move.bp},
+    move: {
+      name: move.name,
+      type: move.type,
+      category: move.category,
+      base_power: move.bp,
+      spread: doubles && SPREAD_TARGETS.includes(move.target),
+    },
     attacker: describePokemon(attacker),
     defender: describePokemon(defender),
     rolls,
@@ -129,7 +159,14 @@ globalThis.champcalc = {
   }),
   move: wrap(({name}) => {
     const m = gen.moves.get(toID(resolve(gen.moves, 'move', name)));
-    return {name: m.name, type: m.type, category: m.category, base_power: m.bp, priority: m.priority || 0};
+    return {
+      name: m.name,
+      type: m.type,
+      category: m.category,
+      base_power: m.bp,
+      priority: m.priority || 0,
+      spread: SPREAD_TARGETS.includes(m.target),
+    };
   }),
   list: wrap(({kind}) => {
     const table = {species: gen.species, moves: gen.moves, items: gen.items, abilities: gen.abilities, natures: gen.natures}[kind];

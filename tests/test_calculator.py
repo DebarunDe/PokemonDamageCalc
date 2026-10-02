@@ -120,3 +120,70 @@ def test_every_learnset_entry_is_a_known_move(calc):
         moves = calc.learnset(species)
         assert moves, f"{species} has no movepool"
         assert set(moves) <= known, species
+
+
+GARCHOMP = PokemonSet("Garchomp", nature="Jolly", sp={"atk": 32, "spe": 32})
+INCINEROAR = PokemonSet("Incineroar", sp={"hp": 32, "def": 2})
+
+
+def test_spread_moves_take_three_quarters_damage_in_doubles(calc):
+    singles = calc.calculate(GARCHOMP, INCINEROAR, "Earthquake")
+    doubles = calc.calculate(GARCHOMP, INCINEROAR, "Earthquake", Field(doubles=True))
+    # 73 base damage * 0.75 spread = 55 -> 46 (85% roll) to 55, then STAB and 2x.
+    assert (doubles.min, doubles.max) == (138, 164)
+    assert doubles.move["spread"] is True
+    assert singles.move["spread"] is False
+
+
+def test_spread_move_with_one_target_left(calc):
+    result = calc.calculate(GARCHOMP, INCINEROAR, "Earthquake", Field(doubles=True), spread=False)
+    assert (result.min, result.max) == (186, 218)
+    assert result.move["spread"] is False
+
+
+def test_single_target_moves_are_unaffected_by_doubles(calc):
+    singles = calc.calculate(GARCHOMP, INCINEROAR, "Dragon Claw")
+    doubles = calc.calculate(GARCHOMP, INCINEROAR, "Dragon Claw", Field(doubles=True))
+    assert (singles.min, singles.max) == (doubles.min, doubles.max)
+    assert doubles.move["spread"] is False
+
+
+def test_spread_true_needs_a_spread_move_in_doubles(calc):
+    with pytest.raises(CalcError, match="only hits one target"):
+        calc.calculate(GARCHOMP, INCINEROAR, "Dragon Claw", Field(doubles=True), spread=True)
+    with pytest.raises(CalcError, match="only applies in doubles"):
+        calc.calculate(GARCHOMP, INCINEROAR, "Earthquake", spread=True)
+
+
+def test_ally_effects(calc):
+    base = calc.calculate(GARCHOMP, INCINEROAR, "Dragon Claw", Field(doubles=True))
+    helped = calc.calculate(GARCHOMP, INCINEROAR, "Dragon Claw", Field(doubles=True, helping_hand=True))
+    guarded = calc.calculate(GARCHOMP, INCINEROAR, "Dragon Claw", Field(doubles=True, friend_guard=True))
+    assert helped.max > base.max and "Helping Hand" in helped.description
+    assert guarded.max < base.max and "Friend Guard" in guarded.description
+
+
+def test_screens_are_weaker_in_doubles(calc):
+    # Screens cut damage to 2732/4096 in doubles instead of half.
+    singles = calc.calculate(GARCHOMP, INCINEROAR, "Dragon Claw", Field(reflect=True))
+    doubles = calc.calculate(GARCHOMP, INCINEROAR, "Dragon Claw", Field(doubles=True, reflect=True))
+    veil = calc.calculate(GARCHOMP, INCINEROAR, "Dragon Claw", Field(doubles=True, aurora_veil=True))
+    assert doubles.max > singles.max
+    assert (veil.min, veil.max) == (doubles.min, doubles.max)
+
+
+@pytest.mark.parametrize("effect", ["helping_hand", "friend_guard"])
+def test_ally_effects_need_doubles(effect):
+    with pytest.raises(CalcError, match="only applies in doubles"):
+        Field(**{effect: True})
+
+
+def test_stat_stages_scale_damage(calc):
+    plain = calc.calculate(GARCHOMP, INCINEROAR, "Dragon Claw")
+    boosted = calc.calculate(
+        PokemonSet("Garchomp", nature="Jolly", sp={"atk": 32, "spe": 32}, boosts={"atk": 2}),
+        PokemonSet("Incineroar", sp={"hp": 32, "def": 2}, boosts={"def": 2}),
+        "Dragon Claw",
+    )
+    assert (boosted.min, boosted.max) == (plain.min, plain.max)
+    assert boosted.description.startswith("+2 ")
