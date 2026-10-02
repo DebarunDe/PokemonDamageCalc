@@ -192,9 +192,44 @@ def test_stat_stages_scale_damage(calc):
 def test_move_info(calc):
     assert calc.move("earthquake") == {
         "name": "Earthquake", "type": "Ground", "category": "Physical",
-        "base_power": 100, "priority": 0, "spread": True,
+        "base_power": 100, "priority": 0, "spread": True, "accuracy": 100,
+        "offensive_stat": "atk", "defensive_stat": "def", "uses_target_attack": False, "contact": False,
     }
     assert calc.move("Aurora Veil")["category"] == "Status"
     assert calc.move("Aqua Jet")["priority"] == 1
     # Weight-based moves have no fixed power.
     assert calc.move("Low Kick")["base_power"] == 0
+
+
+def test_move_stats_and_accuracy(calc):
+    assert calc.move("Psyshock")["defensive_stat"] == "def"
+    assert calc.move("Body Press")["offensive_stat"] == "def"
+    assert calc.move("Foul Play")["uses_target_attack"] is True
+    assert calc.move("Close Combat")["contact"] is True
+    assert calc.move("Aerial Ace")["accuracy"] is True
+    assert calc.move("Zap Cannon")["accuracy"] == 50
+    # Champions raises Crabhammer from 90% to 95%.
+    assert calc.move("Crabhammer")["accuracy"] == 95
+
+
+def test_species_mega_stone(calc):
+    assert calc.species("Charizard-Mega-Y")["mega_stone"] == "Charizardite Y"
+    assert calc.species("Charizard")["mega_stone"] is None
+
+
+def test_calculate_many_matches_calculate(calc):
+    attacker = PokemonSet("Gardevoir-Mega", nature="Modest", sp={"spa": 32}, item="Gardevoirite")
+    defender = PokemonSet("Garchomp-Mega", sp={"hp": 32}, item="Garchompite")
+    _, info, results = calc.calculate_many(attacker, defender, ["Hyper Voice", "Moonblast", "Psyshock"])
+    assert info["max_hp"] == 108 + 32 + 75
+    assert [r.move for r in results] == ["Hyper Voice", "Moonblast", "Psyshock"]
+    # Pixilate turns Hyper Voice Fairy-type.
+    assert results[0].type == "Fairy"
+    for r in results:
+        single = calc.calculate(attacker, defender, r.move)
+        assert (r.min, r.max, r.max_percent) == (single.min, single.max, single.max_percent)
+
+
+def test_calculate_many_rejects_status_moves(calc):
+    with pytest.raises(CalcError, match="status move"):
+        calc.calculate_many(PokemonSet("Garchomp"), PokemonSet("Incineroar"), ["Earthquake", "Swords Dance"])

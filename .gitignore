@@ -219,3 +219,6 @@ __marimo__/
 
 # JS build dependencies
 node_modules/
+
+# Analysis output
+analysis/output/

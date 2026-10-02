@@ -26122,25 +26122,24 @@
     }
     return damage.slice();
   }
-  function runCalc(request) {
-    const attacker = makePokemon(request.attacker);
-    const defender = makePokemon(request.defender);
-    const moveName = resolve(gen.moves, "move", request.move);
-    const f = request.field || {};
-    const doubles = !!f.doubles;
+  function makeMove(name, { doubles = false, spread = null, isCrit = false } = {}) {
+    const moveName = resolve(gen.moves, "move", name);
     const isSpreadMove = SPREAD_TARGETS.includes(gen.moves.get(toID(moveName)).target);
-    if (request.spread === true && !(doubles && isSpreadMove)) {
+    if (spread === true && !(doubles && isSpreadMove)) {
       throw new CalcError(doubles ? `'${moveName}' only hits one target` : `Spread damage only applies in doubles`);
     }
     const move = new import_calc.Move(gen, moveName, {
-      isCrit: !!request.is_crit,
-      overrides: request.spread === false && isSpreadMove ? { target: "normal" } : void 0
+      isCrit,
+      overrides: spread === false && isSpreadMove ? { target: "normal" } : void 0
     });
     if (move.category === "Status") {
       throw new CalcError(`'${moveName}' is a status move and deals no direct damage`);
     }
-    const field = new import_calc.Field({
-      gameType: doubles ? "Doubles" : "Singles",
+    return move;
+  }
+  function makeField(f = {}) {
+    return new import_calc.Field({
+      gameType: f.doubles ? "Doubles" : "Singles",
       weather: f.weather || void 0,
       terrain: f.terrain || void 0,
       attackerSide: { isHelpingHand: !!f.helping_hand },
@@ -26151,7 +26150,16 @@
         isFriendGuard: !!f.friend_guard
       }
     });
-    const result = (0, import_calc.calculate)(gen, attacker, defender, move, field);
+  }
+  function percent(damage, hp) {
+    return Math.round(damage / hp * 1e3) / 10;
+  }
+  function runCalc(request) {
+    const attacker = makePokemon(request.attacker);
+    const defender = makePokemon(request.defender);
+    const f = request.field || {};
+    const move = makeMove(request.move, { doubles: !!f.doubles, spread: request.spread, isCrit: !!request.is_crit });
+    const result = (0, import_calc.calculate)(gen, attacker, defender, move, makeField(f));
     const [min, max] = result.range();
     const rolls = flattenRolls(result.damage);
     const hp = defender.maxHP();
@@ -26162,7 +26170,7 @@
       ko = { chance: k.chance ?? null, n: k.n, text: k.text };
       description = result.desc();
     } else {
-      description = `${attacker.name} ${moveName} vs. ${defender.name}: 0 damage`;
+      description = `${attacker.name} ${move.name} vs. ${defender.name}: 0 damage`;
     }
     return {
       description,
@@ -26171,17 +26179,47 @@
         type: move.type,
         category: move.category,
         base_power: move.bp,
-        spread: doubles && SPREAD_TARGETS.includes(move.target)
+        spread: !!f.doubles && SPREAD_TARGETS.includes(move.target)
       },
       attacker: describePokemon(attacker),
       defender: describePokemon(defender),
       rolls,
       min,
       max,
-      min_percent: Math.round(min / hp * 1e3) / 10,
-      max_percent: Math.round(max / hp * 1e3) / 10,
+      min_percent: percent(min, hp),
+      max_percent: percent(max, hp),
       ko
     };
+  }
+  function runMany(request) {
+    const attacker = makePokemon(request.attacker);
+    const defender = makePokemon(request.defender);
+    const f = request.field || {};
+    const field = makeField(f);
+    const hp = defender.maxHP();
+    const results = request.moves.map((name) => {
+      const result = (0, import_calc.calculate)(gen, attacker, defender, makeMove(name, { doubles: !!f.doubles }), field);
+      const [min, max] = result.range();
+      return {
+        move: result.move.name,
+        // After ability and weather changes, e.g. Pixilate or Weather Ball.
+        type: result.move.type,
+        category: result.move.category,
+        min,
+        max,
+        min_percent: percent(min, hp),
+        max_percent: percent(max, hp)
+      };
+    });
+    return {
+      attacker: describePokemon(attacker),
+      defender: describePokemon(defender),
+      results
+    };
+  }
+  var MEGA_STONES = {};
+  for (const item of gen.items) {
+    for (const forme of Object.values(item.megaStone || {})) MEGA_STONES[forme] = item.name;
   }
   function wrap(fn) {
     return (json) => {
@@ -26195,6 +26233,7 @@
   }
   globalThis.champcalc = {
     calculate: wrap(runCalc),
+    calculateMany: wrap(runMany),
     species: wrap(({ name }) => {
       const s = gen.species.get(toID(resolve(gen.species, "Pokemon", name)));
       return {
@@ -26202,19 +26241,28 @@
         types: s.types,
         base_stats: s.baseStats,
         weight_kg: s.weightkg,
-        other_formes: s.otherFormes || []
+        other_formes: s.otherFormes || [],
+        mega_stone: MEGA_STONES[s.name] || null
       };
     }),
     move: wrap(({ name }) => {
       const m = gen.moves.get(toID(resolve(gen.moves, "move", name)));
+      const full = new import_calc.Move(gen, m.name);
+      const category = m.category || "Status";
+      const statFor = { Physical: ["atk", "def"], Special: ["spa", "spd"] }[category] || [null, null];
       return {
         name: m.name,
         type: m.type,
-        // Raw move data leaves out the category of status moves.
-        category: m.category || "Status",
+        category,
         base_power: m.basePower || 0,
         priority: m.priority || 0,
-        spread: SPREAD_TARGETS.includes(m.target)
+        spread: SPREAD_TARGETS.includes(m.target),
+        // The stats the move really uses: Body Press attacks with Def, Psyshock
+        // hits Def, Foul Play uses the target's Attack.
+        offensive_stat: full.overrideOffensiveStat || statFor[0],
+        defensive_stat: full.overrideDefensiveStat || statFor[1],
+        uses_target_attack: full.overrideOffensivePokemon === "target",
+        contact: !!full.flags?.contact
       };
     }),
     list: wrap(({ kind }) => {

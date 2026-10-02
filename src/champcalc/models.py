@@ -112,6 +112,19 @@ class KOChance:
 
 
 @dataclass(frozen=True)
+class MoveDamage:
+    """One move's damage range from `Calculator.calculate_many`."""
+
+    move: str
+    type: str
+    category: str
+    min: int
+    max: int
+    min_percent: float
+    max_percent: float
+
+
+@dataclass(frozen=True)
 class Result:
     """The outcome of one attack. Percentages are of the defender's max HP."""
 

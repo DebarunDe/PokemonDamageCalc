@@ -11,7 +11,7 @@ from typing import Any
 
 from py_mini_racer import MiniRacer
 
-from .models import CalcError, Field, PokemonSet, Result
+from .models import CalcError, Field, MoveDamage, PokemonSet, Result
 
 
 def _to_id(text: str) -> str:
@@ -33,6 +33,7 @@ class Calculator:
         self.showdown_commit: str = champions["showdown_commit"]
         self._learnsets: dict[str, list[str]] = champions["learnsets"]
         self._abilities: dict[str, list[str]] = champions["abilities"]
+        self._accuracy: dict[str, int | bool] = champions["accuracy"]
         self._lock = threading.Lock()
 
     def _call(self, function: str, payload: dict[str, Any]) -> Any:
@@ -82,8 +83,32 @@ class Calculator:
                 warnings.append(f"{mon['species']} cannot have {mon['ability']}; it can have {', '.join(legal)}")
         return Result.from_js(data, warnings)
 
+    def calculate_many(
+        self,
+        attacker: PokemonSet,
+        defender: PokemonSet,
+        moves: list[str],
+        field: Field | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any], list[MoveDamage]]:
+        """Damage ranges for several moves in one call, for bulk analysis.
+
+        Returns the attacker's and defender's details and one `MoveDamage` per
+        move, in order. Much faster than calling `calculate` per move, but skips
+        KO-chance text and learnset or ability warnings.
+        """
+        data = self._call(
+            "calculateMany",
+            {
+                "attacker": asdict(attacker),
+                "defender": asdict(defender),
+                "moves": list(moves),
+                "field": asdict(field or Field()),
+            },
+        )
+        return data["attacker"], data["defender"], [MoveDamage(**r) for r in data["results"]]
+
     def species(self, name: str) -> dict[str, Any]:
-        """Types, base stats, abilities and formes of a Pokemon."""
+        """Types, base stats, abilities, formes and Mega Stone of a Pokemon."""
         data = self._call("species", {"name": name})
         data["abilities"] = list(self._abilities.get(data["name"], []))
         return data
@@ -92,7 +117,13 @@ class Calculator:
         return self._call("species", {"name": name})["name"]
 
     def move(self, name: str) -> dict[str, Any]:
-        return self._call("move", {"name": name})
+        """Type, category, power and stats used by a move.
+
+        `accuracy` is a percentage, or True for moves that never miss.
+        """
+        data = self._call("move", {"name": name})
+        data["accuracy"] = self._accuracy.get(data["name"], True)
+        return data
 
     def learnset(self, species: str) -> list[str]:
         """Every move the Pokemon can use in Champions, sorted by name."""
