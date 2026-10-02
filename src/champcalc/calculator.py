@@ -31,6 +31,7 @@ class Calculator:
         self._ctx.eval(data.joinpath("calc.js").read_text(encoding="utf-8"))
         champions = json.loads(data.joinpath("champions.json").read_text(encoding="utf-8"))
         self.showdown_commit: str = champions["showdown_commit"]
+        self._legal: list[str] = champions["legal"]
         self._learnsets: dict[str, list[str]] = champions["learnsets"]
         self._abilities: dict[str, list[str]] = champions["abilities"]
         self._accuracy: dict[str, int | bool] = champions["accuracy"]
@@ -107,6 +108,29 @@ class Calculator:
         )
         return data["attacker"], data["defender"], [MoveDamage(**r) for r in data["results"]]
 
+    def calculate_batch(
+        self,
+        moves: list[str],
+        jobs: list[tuple[PokemonSet, PokemonSet, Field | None, list[int]]],
+    ) -> list[tuple[int, list[tuple[int, int]]]]:
+        """The fastest bulk path: many (attacker, defender, field, move indices)
+        jobs in one call, sharing one `moves` list.
+
+        Returns, per job, the defender's max HP and a (min, max) damage pair per
+        move index. No names, descriptions or warnings.
+        """
+        data = self._call(
+            "calculateBatch",
+            {
+                "moves": list(moves),
+                "jobs": [
+                    {"attacker": asdict(a), "defender": asdict(d), "field": asdict(f or Field()), "moves": list(idx)}
+                    for a, d, f, idx in jobs
+                ],
+            },
+        )
+        return [(job["hp"], [tuple(pair) for pair in job["damage"]]) for job in data]
+
     def species(self, name: str) -> dict[str, Any]:
         """Types, base stats, abilities, formes and Mega Stone of a Pokemon."""
         data = self._call("species", {"name": name})
@@ -132,6 +156,12 @@ class Calculator:
     def can_learn(self, species: str, move: str) -> bool:
         moves = self._learnsets.get(self._species_name(species), [])
         return _to_id(move) in {_to_id(m) for m in moves}
+
+    @property
+    def legal_species(self) -> list[str]:
+        """Pokemon and formes usable in Champions, Megas included, without
+        battle-only formes or duplicates that play identically."""
+        return list(self._legal)
 
     @cached_property
     def all_species(self) -> list[str]:

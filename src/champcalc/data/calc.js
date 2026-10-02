@@ -26217,6 +26217,24 @@
       results
     };
   }
+  function runBatch({ moves, jobs }) {
+    const cache = /* @__PURE__ */ new Map();
+    const moveFor = (index, doubles) => {
+      const key = `${index}|${doubles}`;
+      if (!cache.has(key)) cache.set(key, makeMove(moves[index], { doubles }));
+      return cache.get(key);
+    };
+    return jobs.map((job) => {
+      const attacker = makePokemon(job.attacker);
+      const defender = makePokemon(job.defender);
+      const f = job.field || {};
+      const field = makeField(f);
+      return {
+        hp: defender.maxHP(),
+        damage: job.moves.map((i) => (0, import_calc.calculate)(gen, attacker, defender, moveFor(i, !!f.doubles), field).range())
+      };
+    });
+  }
   var MEGA_STONES = {};
   for (const item of gen.items) {
     for (const forme of Object.values(item.megaStone || {})) MEGA_STONES[forme] = item.name;
@@ -26234,6 +26252,7 @@
   globalThis.champcalc = {
     calculate: wrap(runCalc),
     calculateMany: wrap(runMany),
+    calculateBatch: wrap(runBatch),
     species: wrap(({ name }) => {
       const s = gen.species.get(toID(resolve(gen.species, "Pokemon", name)));
       return {
@@ -26262,7 +26281,8 @@
         offensive_stat: full.overrideOffensiveStat || statFor[0],
         defensive_stat: full.overrideDefensiveStat || statFor[1],
         uses_target_attack: full.overrideOffensivePokemon === "target",
-        contact: !!full.flags?.contact
+        contact: !!full.flags?.contact,
+        multi_hit: full.hits > 1 || !!m.multihit
       };
     }),
     list: wrap(({ kind }) => {

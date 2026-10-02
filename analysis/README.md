@@ -1,22 +1,29 @@
-# Mega vs. Mega OHKO analysis
+# OHKO analysis
 
-`mega_ohko.py` answers: **which Mega one-hit KOs the most other Megas?**
+`ohko.py` answers: **which Pokémon one-hit KO the most of the field?**
 
 ```bash
-python analysis/mega_ohko.py                      # singles
-python analysis/mega_ohko.py --doubles            # spread moves take 0.75x
-python analysis/mega_ohko.py --exclude recharge   # without Hyper Beam, Giga Impact, Blast Burn, ...
+python analysis/ohko.py                    # all legal Pokémon, singles (~50 min on 4 cores)
+python analysis/ohko.py --roster megas     # Megas only (~1 min)
+python analysis/ohko.py --doubles          # spread moves take 0.75x
+python analysis/ohko.py --exclude recharge # also drop Hyper Beam, Giga Impact, ...
 ```
 
-It takes about a minute on 4 cores. The results go to `analysis/output/` (not committed):
-- `mega_ohko_<mode>_matchups.csv`: one row per attacker, defender and baseline, with the best move,
-  the best move with at least 90% accuracy, damage percentages, OHKO flags, weather, terrain and notes.
-- `mega_ohko_<mode>_ranking.csv`: per Mega, how many of the other 81 it OHKOs at each baseline.
+The results go to `analysis/output/` (not committed):
+- `ohko_<roster>_<mode>_matchups.csv.gz`: one row per attacker, defender and baseline pair.
+  Each row has the attacker's ability and item, the defender's worst-case ability, the best move,
+  the best reliable move and the best reliable move without a recharge turn, damage percentages,
+  OHKO flags, weather, terrain and notes.
+- `ohko_<roster>_<mode>_ranking.csv`: per Pokémon, how many others it OHKOs at each baseline pair,
+  and with which ability.
 
 ## Method
 
-All 82 Megas attack all 81 others with every damaging move they can learn in Champions.
-That's 279,126 attacker-move-defender combinations, each run at 9 baselines.
+**Roster:** `Calculator.legal_species`. That's every Pokémon and Mega with a tier in Showdown's
+Champions data, plus non-battle-only formes of legal species, minus duplicates that play identically.
+That makes 344 entries, 82 of them Megas.
+
+**Baselines:** 3 attacker × 3 defender.
 
 | Attacker | | Defender | |
 |---|---|---|---|
@@ -24,23 +31,34 @@ That's 279,126 attacker-move-defender combinations, each run at 9 baselines.
 | `max` | 32 SP in the attacking stat, neutral nature | `hp` | 32 HP |
 | `none` | no investment | `bulk` | 32 HP + 32 in the defensive stat the move hits |
 
-Investment always follows the stat a move really uses: Body Press attacks with Defense, Psyshock
-hits Defense, and Foul Play uses the target's Attack.
+Investment follows the stat a move really uses: Body Press attacks with Defense, Psyshock hits
+Defense, and Foul Play uses the target's Attack.
+
+**Items:** Megas hold their Mega Stone. Every other Pokémon attacks with Life Orb, the strongest
+damage item in Champions, which has no Choice Band or Specs, and defends with no item. A Focus Sash
+would stop any OHKO from full HP.
+
+**Abilities:** every attacker/defender ability pairing is calculated. A KO counts only if it works
+against every ability the defender could have. Each attacker is then ranked with the single ability
+that OHKOs the most.
 
 **Matchup rules**
-- Every Mega holds its Mega Stone, which matters for Acrobatics and Poltergeist.
-- **Weather and terrain** from either Mega's ability apply. When both set weather, the slower Mega's
-  weather wins, because abilities activate in speed order with no Speed investment. Those rows are
-  marked "contested".
-- **Intimidate** drops a physical attacker's Attack by 1. Inner Focus and Scrappy block it, and
-  Contrary and Defiant turn it into +1.
+- **Weather and terrain** from either side's ability apply. When both set weather, the slower
+  Pokémon's wins, because abilities activate in speed order with no Speed investment.
+- **Intimidate** drops a physical attacker's Attack by 1. Inner Focus, Scrappy, Clear Body and
+  similar abilities block it, and Contrary, Defiant and Guard Dog turn it into +1.
 - **Trace** copies the opponent's ability.
-- Solar Beam and Solar Blade count only in sun or with Mega Sol. Steel Roller counts only with terrain.
+- **Sturdy** stops a single-hit OHKO from full HP, but multi-hit moves and Parental Bond get past it.
+  **Disguise** stops any OHKO. Mold Breaker ignores both. The calc does not model either ability, so
+  the script applies them.
+- **Charge moves:** Solar Beam and Solar Blade count only in sun or with Mega Sol, and Electro Shot
+  only in rain. Steel Roller counts only with terrain.
 - **Left out:** OHKO moves, fixed or reactive damage, self-KO moves, two-turn moves and moves that
   fail without setup. See `EXCLUDED_MOVES`.
-- **Reliable** means at least 90% accuracy after weather (for example, Blizzard in snow) and No Guard.
+- **Reliable** means at least 90% accuracy after weather, No Guard, Hustle and Compound Eyes.
+  Population Bomb and Triple Axel roll accuracy for every hit, so they need all their hits to land.
 - **Guaranteed OHKO** means the lowest damage roll KOs. **Possible OHKO** means the highest roll does.
 
 **Not modelled:** crits, speed order and who moves first, Sucker Punch or Payback conditions
-(Payback assumes the slower user moves second), and items other than Mega Stones. Multi-hit
+(Payback assumes the slower user moves second), and items other than those above. Multi-hit
 moves with 2–5 hits assume 3 hits, or 5 with Skill Link.

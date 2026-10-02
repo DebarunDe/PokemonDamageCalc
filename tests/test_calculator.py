@@ -194,6 +194,7 @@ def test_move_info(calc):
         "name": "Earthquake", "type": "Ground", "category": "Physical",
         "base_power": 100, "priority": 0, "spread": True, "accuracy": 100,
         "offensive_stat": "atk", "defensive_stat": "def", "uses_target_attack": False, "contact": False,
+        "multi_hit": False,
     }
     assert calc.move("Aurora Veil")["category"] == "Status"
     assert calc.move("Aqua Jet")["priority"] == 1
@@ -233,3 +234,30 @@ def test_calculate_many_matches_calculate(calc):
 def test_calculate_many_rejects_status_moves(calc):
     with pytest.raises(CalcError, match="status move"):
         calc.calculate_many(PokemonSet("Garchomp"), PokemonSet("Incineroar"), ["Earthquake", "Swords Dance"])
+
+
+def test_calculate_batch_matches_calculate(calc):
+    moves = ["Earthquake", "Dragon Claw", "Stone Edge"]
+    jobs = [
+        (GARCHOMP, INCINEROAR, None, [0, 1]),
+        (GARCHOMP, INCINEROAR, Field(doubles=True), [0, 2]),
+    ]
+    (hp1, dmg1), (hp2, dmg2) = calc.calculate_batch(moves, jobs)
+    assert hp1 == hp2 == 202
+    assert dmg1[0] == (186, 218) and dmg2[0] == (138, 164)
+    single = calc.calculate(GARCHOMP, INCINEROAR, "Stone Edge", Field(doubles=True))
+    assert dmg2[1] == (single.min, single.max)
+
+
+def test_legal_species(calc):
+    legal = calc.legal_species
+    assert len(legal) == len(set(legal)) > 300
+    assert {"Incineroar", "Garchomp-Mega", "Meowstic-F", "Aegislash-Both"} <= set(legal)
+    # Battle-only formes and cosmetic duplicates are left out.
+    assert not {"Aegislash-Blade", "Castform-Rainy", "Mimikyu-Busted", "Vivillon-Fancy"} & set(legal)
+
+
+def test_multi_hit_flag(calc):
+    assert calc.move("Bullet Seed")["multi_hit"] is True
+    assert calc.move("Dual Wingbeat")["multi_hit"] is True
+    assert calc.move("Earthquake")["multi_hit"] is False

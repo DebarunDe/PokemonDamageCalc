@@ -171,6 +171,27 @@ function runMany(request) {
   };
 }
 
+// Bulk analysis: many attacker/defender/field jobs in one call. `moves` is
+// shared and each job lists the indices it uses. Returns [min, max] per move.
+function runBatch({moves, jobs}) {
+  const cache = new Map();
+  const moveFor = (index, doubles) => {
+    const key = `${index}|${doubles}`;
+    if (!cache.has(key)) cache.set(key, makeMove(moves[index], {doubles}));
+    return cache.get(key);
+  };
+  return jobs.map(job => {
+    const attacker = makePokemon(job.attacker);
+    const defender = makePokemon(job.defender);
+    const f = job.field || {};
+    const field = makeField(f);
+    return {
+      hp: defender.maxHP(),
+      damage: job.moves.map(i => calculate(gen, attacker, defender, moveFor(i, !!f.doubles), field).range()),
+    };
+  });
+}
+
 // Mega Stone item name for each Mega forme, e.g. 'Charizard-Mega-Y' -> 'Charizardite Y'.
 const MEGA_STONES = {};
 for (const item of gen.items) {
@@ -191,6 +212,7 @@ function wrap(fn) {
 globalThis.champcalc = {
   calculate: wrap(runCalc),
   calculateMany: wrap(runMany),
+  calculateBatch: wrap(runBatch),
   species: wrap(({name}) => {
     const s = gen.species.get(toID(resolve(gen.species, 'Pokemon', name)));
     return {
@@ -221,6 +243,7 @@ globalThis.champcalc = {
       defensive_stat: full.overrideDefensiveStat || statFor[1],
       uses_target_attack: full.overrideOffensivePokemon === 'target',
       contact: !!full.flags?.contact,
+      multi_hit: full.hits > 1 || !!m.multihit,
     };
   }),
   list: wrap(({kind}) => {
