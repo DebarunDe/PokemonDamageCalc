@@ -19,7 +19,7 @@ Sturdy and Disguise follow the same rules as analysis/ohko.py.
 
 Usage:
     python analysis/meta_matchups.py                 # current regulation
-    python analysis/meta_matchups.py --regulation M-B
+    python analysis/meta_matchups.py --regulation M-B --month 2026-08
 """
 
 from __future__ import annotations
@@ -305,12 +305,14 @@ def evaluate(mon: MonSet) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--regulation", help="default: the current one")
+    parser.add_argument("--month", help="ladder month, e.g. 2026-08 (default: the regulation's latest)")
     parser.add_argument("--processes", type=int, default=os.cpu_count())
     args = parser.parse_args()
 
     calc = Calculator(args.regulation)
     db = sqlite3.connect(DB)
-    month = db.execute("SELECT MAX(month) FROM showdown_usage WHERE regulation=?", (calc.regulation,)).fetchone()[0]
+    month = args.month or db.execute(
+        "SELECT MAX(month) FROM showdown_usage WHERE regulation=?", (calc.regulation,)).fetchone()[0]
     if not month:
         raise SystemExit(f"No ladder data for {calc.regulation}; run analysis/ingest.py first")
     usage = dict(db.execute(
@@ -349,7 +351,7 @@ def main() -> None:
     df = pd.DataFrame(rows).set_index("pokemon").sort_index()
     df["ladder_usage_1760"] = [usage_by_id.get(to_id(p), 0.0) for p in df.index]
     OUT.mkdir(exist_ok=True)
-    path = OUT / f"meta_matchups_{calc.regulation}.csv"
+    path = OUT / f"meta_matchups_{calc.regulation}_{month}.csv"
     df.to_csv(path)
     print(f"Wrote {path} ({len(df)} Pokemon) in {time.time() - start:.0f}s")
 

@@ -99,3 +99,23 @@ All three take `--regulation` (`M-A`, `M-B`, `M-C`; default the current one) whe
   are computed both ways, attacking and defending, with the common moves and with any legal move.
   It also reports Speed against the meta (with no speed control, under Tailwind and under Trick Room)
   and access to utility (Fake Out, Tailwind, Trick Room, redirection, Intimidate, weather, ...).
+- **`model.py`** fits what the meta rewards: a ridge model predicts log ladder usage at 1760+ from the
+  matchup features plus is-Mega, base stat total and counter pressure (how often the meta beats it in
+  ladder games). It's cross-validated, so each Pokémon is scored by a model that never saw it. It
+  writes two lists:
+  - **proven**: Pokémon under 10% ladder usage, ranked by tournament performance, each with the
+    model's top reasons.
+  - **potential**: Pokémon the model rates highly but with too little tournament data to judge. This
+    is a speculative watchlist.
+
+  It also backtests each score: M-A (May) → M-B (July) and M-B (August) → M-C (September).
+  ```bash
+  python analysis/meta_matchups.py --regulation M-A --month 2026-05   # features for each snapshot
+  python analysis/meta_matchups.py --regulation M-B --month 2026-08
+  python analysis/meta_matchups.py --regulation M-C --month 2026-09
+  python analysis/model.py
+  ```
+  **Findings so far:** the model explains about 43% of usage variation (cross-validated R²), but its
+  usage gap does not predict future usage. Tournament performance does, with Spearman +0.13 and +0.17
+  against usage change beyond mean reversion. The features miss mechanics like Unburden, Armor Tail
+  and Last Respects, which is why the ranking leans on performance and uses the model to explain it.
