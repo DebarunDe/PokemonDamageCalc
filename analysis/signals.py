@@ -37,9 +37,21 @@ OUT = Path(__file__).parent / "output"
 REGULATIONS = ("M-A", "M-B", "M-C")
 
 PRIOR_GAMES = 100       # win-rate shrinkage strength, in games
-PRIOR_TOP_CUT = 20      # top-cut shrinkage strength, in teams
-MIN_TEAMS = 15          # Pokemon on fewer published teams are left out
+PRIOR_TOP_CUT = 5       # top-cut shrinkage strength, in expected top-cut teams
+MIN_TEAMS = 30          # Pokemon on fewer published teams are left out
 MIN_LADDER_USAGE = 0.005
+
+
+# Showdown and Limitless name a few forms differently; compare on one spelling.
+SAME_POKEMON = {
+    "Aegislash-Both": "Aegislash", "Aegislash-Blade": "Aegislash",
+    "Meowstic-F": "Meowstic", "Toxtricity-Low-Key": "Toxtricity",
+}
+
+
+def canonical(name: str) -> str:
+    name = name.replace("\u2019", "'")
+    return SAME_POKEMON.get(name, name)
 
 
 def top_cut_size(players: int) -> int:
@@ -56,6 +68,7 @@ def tournament_stats(db: sqlite3.Connection, regulation: str) -> pd.DataFrame:
     )
     if members.empty:
         return pd.DataFrame()
+    members["pokemon"] = members["pokemon"].map(canonical)
     teams = members.drop_duplicates(["tournament", "player"]).copy()
     teams["top_cut"] = teams["placing"] <= teams["players"].map(top_cut_size)
     n_teams, n_top = len(teams), int(teams["top_cut"].sum())
@@ -72,8 +85,9 @@ def tournament_stats(db: sqlite3.Connection, regulation: str) -> pd.DataFrame:
     })
     stats["usage"] = stats["teams"] / n_teams
     stats["win_rate"] = (stats["wins"] + PRIOR_GAMES * field_wr) / (stats["wins"] + stats["losses"] + PRIOR_GAMES)
-    top_share = (stats["top_cut_teams"] + PRIOR_TOP_CUT * stats["usage"]) / (n_top + PRIOR_TOP_CUT)
-    stats["conversion"] = top_share / stats["usage"]
+    # Actual vs expected top-cut appearances, shrunk toward 1 for small samples.
+    expected = stats["teams"] * n_top / n_teams
+    stats["conversion"] = (stats["top_cut_teams"] + PRIOR_TOP_CUT) / (expected + PRIOR_TOP_CUT)
     stats.attrs.update(n_teams=n_teams, n_top=n_top, field_wr=field_wr,
                        n_tournaments=members["tournament"].nunique())
     return stats
@@ -85,13 +99,20 @@ def ladder_stats(db: sqlite3.Connection, regulation: str) -> pd.DataFrame:
            FROM showdown_usage WHERE regulation = ? AND ladder = 'bo1'
            GROUP BY rating, pokemon""",
         db, params=(regulation,),
-    ).pivot(index="pokemon", columns="rating", values="usage")
+    )
+    usage["pokemon"] = usage["pokemon"].map(canonical)
+    usage = usage.groupby(["rating", "pokemon"], as_index=False)["usage"].sum()
+    usage = usage.pivot(index="pokemon", columns="rating", values="usage")
     if usage.empty or 0 not in usage or 1760 not in usage:
         return pd.DataFrame()
     out = pd.DataFrame({"ladder_usage": usage[0], "ladder_usage_1760": usage[1760]})
     out = out[out["ladder_usage"] >= MIN_LADDER_USAGE].fillna(0)
     out["ladder_lift"] = (out["ladder_usage_1760"] + 0.001) / (out["ladder_usage"] + 0.001)
     return out
+
+
+def spearman(a: pd.Series, b: pd.Series) -> float:
+    return a.rank().corr(b.rank())
 
 
 def zscore(s: pd.Series) -> pd.Series:
@@ -130,8 +151,8 @@ def backtest(db: sqlite3.Connection, before: str, after: str) -> dict | None:
     top = df.nlargest(15, "undervalued")
     return {
         "pokemon": len(df),
-        "spearman_undervalued_vs_change": df["undervalued"].corr(df["change_beyond_usage"], method="spearman"),
-        "spearman_performance_vs_change": df["performance"].corr(df["change_beyond_usage"], method="spearman"),
+        "spearman_undervalued_vs_change": spearman(df["undervalued"], df["change_beyond_usage"]),
+        "spearman_performance_vs_change": spearman(df["performance"], df["change_beyond_usage"]),
         "top15_median_change_beyond_usage": top["change_beyond_usage"].median(),
         "top15": top,
     }
