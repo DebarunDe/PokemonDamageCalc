@@ -18,14 +18,18 @@ Pokemon the model did not train on, so a Pokemon's own usage never leaks in.
 
 Each Pokemon's top reasons are the ridge model's largest feature contributions.
 
-The backtests score one regulation and check which score predicts usage
-change into the next, beyond regression to the mean. So far tournament
-performance does (Spearman ~ +0.13 to +0.17) and usage_gap does not: the
-matchup features explain usage well but miss mechanics such as Unburden,
-Armor Tail or Last Respects. So the report has two lists:
+    edge        tournament wins per game above what the pilots' skill predicts,
+                pulled toward a prior in proportion to sample size. The prior is
+                the features' prediction when that beats the average out of
+                sample, else the average (so far, always the average: true edges
+                are small, about +-3 points, and features don't predict them)
 
-    proven      performance among Pokemon under POPULAR_USAGE (the validated
-                signal), with the matchup model's reasons
+The backtests score one regulation and check which score predicts usage
+change into the next, beyond regression to the mean. Edge and performance do
+(Spearman ~ +0.13 to +0.18); usage_gap does not. So the report has two lists:
+
+    proven      edge among Pokemon under POPULAR_USAGE with tournament data
+                (the validated signal), with the usage model's reasons
     potential   large usage_gap with little tournament data: a speculative
                 watchlist of Pokemon that look strong on paper but are untested
 
@@ -65,6 +69,7 @@ BACKTESTS = [(("M-A", "2026-05"), ("M-B", "2026-07")), (("M-B", "2026-08"), ("M-
 USAGE_FLOOR = 1e-4          # Pokemon below the 1760 stats' cutoff
 MIN_EXPECTED_USAGE = 0.005  # only flag Pokemon the model expects to see at least this much
 POPULAR_USAGE = 0.10        # at or above this ladder usage a Pokemon is not "underused"
+MIN_EDGE_GAMES = 20         # tournament games needed to help fit the edge prior
 MIN_CHECK_GAMES = 10
 CALC_NAMES = {"Aegislash": "Aegislash-Both"}
 
@@ -119,13 +124,19 @@ def load_features(regulation: str, month: str, db) -> pd.DataFrame:
     for c in df.columns:
         if c.startswith("util_"):
             df[c] = df[c].astype(int)
+    # Without ladder sets, assume a Pokemon with access runs a tool as often as
+    # the typical Pokemon with access does.
+    for c in [c for c in df.columns if c.startswith("used_")]:
+        access = df.get("util_" + c[len("used_"):], pd.Series(1, index=df.index)).astype(bool)
+        typical = df.loc[access & df[c].notna(), c].median()
+        df[c] = df[c].fillna(access * (0 if pd.isna(typical) else typical))
     return df
 
 
 def feature_columns(df: pd.DataFrame) -> list[str]:
     # speed_trick_room is ~1 - speed_outspeeds; keeping both only splits one effect in two.
     return [c for c in df.columns
-            if c.startswith(("off_", "def_", "speed_", "util_")) and c not in ("speed", "speed_trick_room")
+            if c.startswith(("off_", "def_", "speed_", "util_", "used_")) and c not in ("speed", "speed_trick_room")
             ] + ["is_mega", "base_stat_total", "counter_pressure", "counter_pressure_missing"]
 
 
@@ -170,19 +181,71 @@ def zscore(s: pd.Series) -> pd.Series:
     return (s - s.mean()) / (s.std(ddof=0) or 1)
 
 
+def estimate_edge(df: pd.DataFrame, regulation: str, db, seed: int = 0) -> tuple[pd.DataFrame, dict]:
+    """Each Pokemon's tournament edge: wins per game above what its pilots'
+    skill predicts. The matchup features predict a prior edge (cross-validated),
+    and its own record pulls the estimate away from that prior in proportion to
+    its games. Pokemon without tournament data get the prior. The prior's
+    strength k (in games) is estimated from how much true edges vary."""
+    t = signals.tournament_stats(db, regulation)
+    t.index = t.index.map(key)
+    t = t.groupby(level=0)[["wins", "losses", "expected_wins"]].sum()
+    games = (t["wins"] + t["losses"]).reindex(df.index).fillna(0).values
+    raw = ((t["wins"] - t["expected_wins"]) / (t["wins"] + t["losses"]).clip(lower=1)).reindex(df.index).fillna(0).values
+    X = df[feature_columns(df)].astype(float).values
+    has = games >= MIN_EDGE_GAMES
+    weight = np.minimum(games, 2000)  # sampling noise shrinks with games; cap so a few don't dominate
+
+    def model():
+        return ridge()
+
+    prior = np.zeros(len(df))
+    idx = np.flatnonzero(has)
+    for train, test in KFold(10, shuffle=True, random_state=seed).split(idx):
+        m = model().fit(X[idx[train]], raw[idx[train]], ridgecv__sample_weight=weight[idx[train]])
+        prior[idx[test]] = m.predict(X[idx[test]])
+    if (~has).any():
+        m = model().fit(X[idx], raw[idx], ridgecv__sample_weight=weight[idx])
+        prior[~has] = m.predict(X[~has])
+
+    # The prior must beat a constant (the average edge) out of sample, else use the constant.
+    mean_edge = np.average(raw[has], weights=weight[has])
+    ss_model = np.average((raw[has] - prior[has]) ** 2, weights=weight[has])
+    ss_const = np.average((raw[has] - mean_edge) ** 2, weights=weight[has])
+    prior_r2 = 1 - ss_model / ss_const
+    if prior_r2 <= 0:
+        prior[:] = mean_edge
+
+    # Spread of true edges = observed spread around the prior minus binomial noise.
+    resid = raw[has] - prior[has]
+    noise = np.average(0.25 / games[has], weights=weight[has])
+    tau2 = max(np.average(resid ** 2, weights=weight[has]) - noise, 1e-5)
+    k = 0.25 / tau2
+    edge = (games * raw + k * prior) / (games + k)
+    out = pd.DataFrame({"games": games, "edge_observed": np.where(games > 0, raw, np.nan),
+                        "edge_prior": prior, "edge": edge}, index=df.index)
+    return out, {"edge_prior_r2": round(prior_r2, 3), "edge_prior": "model" if prior_r2 > 0 else "average",
+                 "prior_strength_games": round(k), "edge_pokemon": int(has.sum())}
+
+
 def score(regulation: str, month: str, db) -> tuple[pd.DataFrame, dict]:
     df, meta = fit(load_features(regulation, month, db))
     perf = signals.signals(db, regulation)
     if not perf.empty:
         perf.index = perf.index.map(key)
         perf = perf[~perf.index.duplicated()]
-        df = df.join(perf[["win_rate", "conversion", "ladder_lift", "performance"]], how="left")
+        df = df.join(perf[["win_rate", "win_rate_vs_skill", "pilot_skill", "conversion", "ladder_lift",
+                           "performance"]], how="left")
+        edge, edge_meta = estimate_edge(df, regulation, db)
+        df = df.join(edge)
+        meta.update(edge_meta)
     else:
         df["performance"] = np.nan
+        df["edge"] = np.nan
     gap_z = zscore(df["usage_gap"])
     perf_z = zscore(df["performance"])
     df["undervalued"] = np.where(df["performance"].notna(), (gap_z + perf_z) / 2, gap_z)
-    return df.sort_values("undervalued", ascending=False), meta
+    return df.sort_values("edge", ascending=False), meta
 
 
 def spearman(a: pd.Series, b: pd.Series) -> float:
@@ -201,7 +264,9 @@ def backtest(db, before: tuple[str, str], after: tuple[str, str]) -> dict:
     result = {"n": len(df), "n_tournament": len(with_perf)}
     for name, frame, column in (("usage_gap", df, "usage_gap"),
                                 ("performance", with_perf, "performance"),
-                                ("undervalued", with_perf, "undervalued")):
+                                ("undervalued", with_perf, "undervalued"),
+                                ("edge", df, "edge"),
+                                ("edge (with data)", with_perf, "edge")):
         top = frame.nlargest(20, column)
         result[name] = {
             "spearman": spearman(frame[column], frame["change_beyond_reversion"]),
@@ -231,21 +296,23 @@ def main() -> None:
     print("  +", ", ".join(f"{k} {v:+.2f}" for k, v in c[::-1].head(8).items()))
     print("  -", ", ".join(f"{k} {v:+.2f}" for k, v in c.head(6).items()))
 
-    proven = df[df["performance"].notna() & (df["usage"] < POPULAR_USAGE)].sort_values("performance", ascending=False)
-    potential = df[df["performance"].isna() & (df["expected_usage"] >= MIN_EXPECTED_USAGE)]
+    proven = df[(df["games"] >= MIN_EDGE_GAMES) & (df["usage"] < POPULAR_USAGE)].sort_values("edge", ascending=False)
+    potential = df[(df["games"] < MIN_EDGE_GAMES) & (df["expected_usage"] >= MIN_EXPECTED_USAGE)]
     potential = potential.sort_values("usage_gap", ascending=False)
     proven.to_csv(OUT / f"proven_{args.regulation}_{month}.csv")
     potential.to_csv(OUT / f"potential_{args.regulation}_{month}.csv")
-    cols = ["pokemon", "usage", "win_rate", "conversion", "ladder_lift", "performance", "reasons"]
+    cols = ["pokemon", "usage", "games", "win_rate", "pilot_skill", "edge", "conversion", "ladder_lift", "reasons"]
     pcols = ["pokemon", "usage", "expected_usage", "usage_gap", "reasons"]
     with pd.option_context("display.width", 220, "display.max_columns", 20, "display.max_colwidth", 80,
                            "display.float_format", "{:.3f}".format):
-        print(f"\nProven but underused (ladder usage under {POPULAR_USAGE:.0%}, by tournament performance):")
+        print(f"\nEdge model: prior {meta.get('edge_prior')} (cross-validated R^2 {meta.get('edge_prior_r2')}), "
+              f"prior strength {meta.get('prior_strength_games')} games")
+        print(f"\nProven but underused (ladder usage under {POPULAR_USAGE:.0%}, by skill-adjusted tournament edge):")
         print(proven[cols].head(args.top).to_string(index=False))
         print("\nUntested potential (little tournament data; model expects more usage):")
         print(potential[pcols].head(15).to_string(index=False))
-        print("\nUnderperforming relative to popularity (2%+ usage, lowest performance):")
-        print(df[(df["usage"] >= 0.02) & df["performance"].notna()].nsmallest(8, "performance")[cols]
+        print("\nUnderperforming relative to popularity (2%+ usage, lowest edge):")
+        print(df[(df["usage"] >= 0.02) & (df["games"] >= MIN_EDGE_GAMES)].nsmallest(8, "edge")[cols]
               .to_string(index=False))
 
     for before, after in BACKTESTS:
@@ -253,9 +320,9 @@ def main() -> None:
         print(f"\nBacktest {before[0]} {before[1]} -> {after[0]} {after[1]} "
               f"({r['n']} Pokemon, {r['n_tournament']} with tournament data). "
               f"Does each score predict usage change beyond mean reversion?")
-        for name in ("usage_gap", "performance", "undervalued"):
+        for name in ("usage_gap", "performance", "undervalued", "edge", "edge (with data)"):
             x = r[name]
-            print(f"  {name:12} Spearman {x['spearman']:+.3f}; top 20: median change {x['top20_median']:+.2f} "
+            print(f"  {name:16} Spearman {x['spearman']:+.3f}; top 20: median change {x['top20_median']:+.2f} "
                   f"log-usage, {x['top20_rose']:.0%} beat mean reversion  ({', '.join(x['top'][:5])})")
 
 

@@ -4,12 +4,16 @@ For each Pokemon in a regulation:
 - usage: share of published Limitless teams that include it
 - win_rate: match win rate of those teams, shrunk toward the field average
   (a 3-1 Pokemon shouldn't top the list)
+- win_rate_vs_skill: wins above what the teams' pilots would be expected to win
+  given their record in their other tournaments; strong players bringing a
+  Pokemon doesn't make it look strong
 - conversion: its share of top-cut teams divided by its share of all teams
   (above 1 = it makes top cut more often than its popularity predicts)
 - ladder_lift: Showdown best-of-1 usage at 1760+ divided by usage at all
   ratings (above 1 = strong players use it more)
 
-performance is the average z-score of those three; undervalued is how far
+performance is the average z-score of win_rate_vs_skill, conversion and
+ladder_lift; undervalued is how far
 performance is above what its usage would predict (the residual of a fit of
 performance on log usage), so it doesn't just reward being rare.
 
@@ -38,6 +42,7 @@ REGULATIONS = ("M-A", "M-B", "M-C")
 
 PRIOR_GAMES = 100       # win-rate shrinkage strength, in games
 PRIOR_TOP_CUT = 5       # top-cut shrinkage strength, in expected top-cut teams
+PRIOR_SKILL_GAMES = 30  # player-skill shrinkage strength, in games
 MIN_TEAMS = 30          # Pokemon on fewer published teams are left out
 MIN_LADDER_USAGE = 0.005
 
@@ -59,6 +64,22 @@ def top_cut_size(players: int) -> int:
     return max(4, math.ceil(players * 0.125))
 
 
+def player_skill(db: sqlite3.Connection) -> pd.DataFrame:
+    """Each player's match win rate in all their *other* tournaments (any
+    regulation), shrunk toward the overall average: who they are, excluding the
+    event being explained."""
+    teams = pd.read_sql_query(
+        "SELECT DISTINCT tournament, player, wins, losses FROM team_members", db)
+    teams["games"] = teams["wins"] + teams["losses"]
+    overall = teams["wins"].sum() / max(1, teams["games"].sum())
+    totals = teams.groupby("player")[["wins", "games"]].transform("sum")
+    other_wins = totals["wins"] - teams["wins"]
+    other_games = totals["games"] - teams["games"]
+    teams["skill"] = (other_wins + PRIOR_SKILL_GAMES * overall) / (other_games + PRIOR_SKILL_GAMES)
+    teams["skill_games"] = other_games
+    return teams[["tournament", "player", "skill", "skill_games"]]
+
+
 def tournament_stats(db: sqlite3.Connection, regulation: str) -> pd.DataFrame:
     members = pd.read_sql_query(
         """SELECT m.tournament, m.player, m.placing, m.wins, m.losses, m.pokemon, t.players
@@ -71,20 +92,28 @@ def tournament_stats(db: sqlite3.Connection, regulation: str) -> pd.DataFrame:
     members["pokemon"] = members["pokemon"].map(canonical)
     teams = members.drop_duplicates(["tournament", "player"]).copy()
     teams["top_cut"] = teams["placing"] <= teams["players"].map(top_cut_size)
+    teams = teams.merge(player_skill(db), on=["tournament", "player"], how="left")
+    teams["expected_wins"] = teams["skill"] * (teams["wins"] + teams["losses"])
     n_teams, n_top = len(teams), int(teams["top_cut"].sum())
     field_wr = teams["wins"].sum() / max(1, (teams["wins"] + teams["losses"]).sum())
 
     members = members.drop_duplicates(["tournament", "player", "pokemon"])
-    members = members.merge(teams[["tournament", "player", "top_cut"]], on=["tournament", "player"])
+    members = members.merge(teams[["tournament", "player", "top_cut", "skill", "expected_wins"]],
+                            on=["tournament", "player"])
     g = members.groupby("pokemon")
     stats = pd.DataFrame({
         "teams": g.size(),
         "wins": g["wins"].sum(),
         "losses": g["losses"].sum(),
+        "expected_wins": g["expected_wins"].sum(),
+        "pilot_skill": g["skill"].mean(),
         "top_cut_teams": g["top_cut"].sum(),
     })
     stats["usage"] = stats["teams"] / n_teams
     stats["win_rate"] = (stats["wins"] + PRIOR_GAMES * field_wr) / (stats["wins"] + stats["losses"] + PRIOR_GAMES)
+    # Wins above what its pilots' skill predicts, per game, shrunk toward 0.
+    stats["win_rate_vs_skill"] = (stats["wins"] - stats["expected_wins"]) / (
+        stats["wins"] + stats["losses"] + PRIOR_GAMES)
     # Actual vs expected top-cut appearances, shrunk toward 1 for small samples.
     expected = stats["teams"] * n_top / n_teams
     stats["conversion"] = (stats["top_cut_teams"] + PRIOR_TOP_CUT) / (expected + PRIOR_TOP_CUT)
@@ -124,7 +153,7 @@ def signals(db: sqlite3.Connection, regulation: str) -> pd.DataFrame:
     if t.empty:
         return t
     df = t[t["teams"] >= MIN_TEAMS].join(ladder_stats(db, regulation), how="left")
-    parts = [zscore(df["win_rate"]), zscore(np.log(df["conversion"]))]
+    parts = [zscore(df["win_rate_vs_skill"]), zscore(np.log(df["conversion"]))]
     if df["ladder_lift"].notna().any():
         parts.append(zscore(np.log(df["ladder_lift"])).fillna(0))
     df["performance"] = sum(parts) / len(parts)

@@ -11,7 +11,11 @@ or a synthesized one when it has no ladder data:
     defense   share of the meta that OHKOs / 2HKOs it, and average damage taken
     speed     share of the meta it outspeeds, under Tailwind, and under Trick Room
     utility   access to support tools (Fake Out, Tailwind, Trick Room,
-              redirection, Intimidate, weather/terrain, ...)
+              redirection, Intimidate, weather/terrain, ...) and to mechanics
+              the calcs miss (priority blocking, speed abilities, Fake Out and
+              Intimidate immunity, scaling attacks like Last Respects)
+    used      how often its ladder sets actually run each tool (blank without
+              ladder data)
 
 KO shares are expected values: each KO counts with its move's accuracy. Calcs
 are doubles (spread moves take 0.75x); weather/terrain, Intimidate, Trace,
@@ -66,6 +70,8 @@ UTILITY_MOVES = {
     "healing": {"Pollen Puff", "Life Dew", "Heal Pulse", "Floral Healing", "Wish"},
     "setup": {"Swords Dance", "Nasty Plot", "Dragon Dance", "Calm Mind", "Bulk Up", "Quiver Dance",
               "Shell Smash", "Belly Drum", "Coil", "Shift Gear", "Victory Dance", "Tidy Up"},
+    # Power grows over the game; the calc only sees the base power.
+    "scaling_attack": {"Last Respects", "Rage Fist"},
 }
 UTILITY_ABILITIES = {
     "intimidate": {"Intimidate"},
@@ -73,7 +79,19 @@ UTILITY_ABILITIES = {
     "terrain": set(ohko.TERRAIN_ABILITIES),
     "redirection": {"Lightning Rod", "Storm Drain"},
     "prankster": {"Prankster"},
+    # Mechanics the damage calcs don't capture.
+    "priority_block": {"Armor Tail", "Queenly Majesty", "Dazzling", "Psychic Surge"},
+    "speed_ability": {"Unburden", "Speed Boost", "Swift Swim", "Chlorophyll", "Sand Rush", "Slush Rush",
+                      "Surge Surfer"},
+    "fake_out_immune": {"Inner Focus", "Armor Tail", "Queenly Majesty", "Dazzling"},
+    "intimidate_immune": ohko.INTIMIDATE_IMMUNE | ohko.INTIMIDATE_RAISES | {"Competitive"},
+    "status_immune": {"Good as Gold", "Magic Bounce"},
+    "scaling_attack": {"Supreme Overlord"},
 }
+# How often a Pokemon's ladder sets actually run these tools (share of sets).
+USED_TAGS = ("fake_out", "tailwind", "trick_room", "redirection", "helping_hand", "wide_guard",
+             "speed_drop", "pivot", "screens", "disruption", "sleep", "attack_drop", "setup")
+SPREAD_TARGETS = {"allAdjacent", "allAdjacentFoes"}
 
 
 @dataclass
@@ -90,6 +108,7 @@ class MonSet:
     observed: bool = True
     gender: str | None = None
     utility: dict[str, bool] = field(default_factory=dict)
+    used: dict[str, float] = field(default_factory=dict)
 
     def to_set(self, boosts: dict[str, int] | None = None, gender: str | None = None) -> PokemonSet:
         return PokemonSet(self.name, ability=self.ability or None, item=self.item, nature=self.nature,
@@ -141,6 +160,9 @@ class SetBuilder:
         utility = {tag: bool(moves & set(learnset)) for tag, moves in UTILITY_MOVES.items()}
         for tag, abilities in UTILITY_ABILITIES.items():
             utility[tag] = utility.get(tag, False) or bool(abilities & set(legal_abilities))
+        utility["priority_attack"] = any(self.info(m)["priority"] > 0 for m in potential if m != "Fake Out")
+        utility["spread_stab"] = any(self.info(m)["spread"] and self.info(m)["type"] in info["types"]
+                                     for m in potential)
 
         abilities = items = spreads = moves = []
         if ladder_name:
@@ -152,7 +174,10 @@ class SetBuilder:
                        legal_abilities[0])
         item = info["mega_stone"] or next((self.item_names[i] for i, _ in items if i in self.item_names), None)
         parsed = next(filter(None, (parse_spread(s) for s, _ in spreads)), None)
-        common = [self.move_names[m] for m, share in moves if m in self.move_names and share >= 0.2]
+        shares = {self.move_names[m]: share for m, share in moves if m in self.move_names}
+        used = {tag: max((shares.get(m, 0.0) for m in UTILITY_MOVES[tag]), default=0.0) if shares else float("nan")
+                for tag in USED_TAGS}
+        common = [m for m, share in shares.items() if share >= 0.2]
         common = [m for m in common if m in potential][:4]
         observed = bool(parsed and common)
         if not observed:
@@ -163,7 +188,7 @@ class SetBuilder:
             common = sorted(potential, key=lambda m: -self.info(m)["base_power"])[:4]
         nature, sp = parsed
         return MonSet(name, ability, item, nature, sp, common, potential, tuple(info["types"]),
-                      observed=observed, gender=info["gender"], utility=utility)
+                      observed=observed, gender=info["gender"], utility=utility, used=used)
 
 
 def speed_of(calc: Calculator, mon: MonSet) -> int:
@@ -299,6 +324,7 @@ def evaluate(mon: MonSet) -> dict:
     row["speed_trick_room"] = round(sum(w * ((mon.speed < m.speed) + 0.5 * (mon.speed == m.speed))
                                         for m, w in others) / total_weight, 4)
     row.update({f"util_{k}": v for k, v in mon.utility.items()})
+    row.update({f"used_{k}": v for k, v in mon.used.items()})
     return row
 
 
