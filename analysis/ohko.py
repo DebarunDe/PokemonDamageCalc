@@ -11,8 +11,13 @@ move, at three attacker and three defender baselines:
               bulk   32 HP and 32 in the defensive stat the move hits
 
 Items: Megas hold their Mega Stone. Other Pokemon attack holding Life Orb (the
-strongest damage item in Champions, which has no Choice Band or Specs) and
-defend holding nothing.
+strongest damage item in Champions, which has no Choice Band or Specs), or
+nothing with --items none, and defend holding nothing.
+
+Speed: attackers at max+ and max also put 32 SP in Speed (64 of 66 SP);
+defenders at hp put 32 in Speed and at bulk the 2 SP left. A "first-strike"
+OHKO is a reliable OHKO landed before the target can move: the attacker is
+strictly faster (speed ties don't count), or the move has priority.
 
 Abilities: every attacker/defender ability pairing is calculated. An OHKO only
 counts if it works against every ability the defender could have, and each
@@ -31,12 +36,13 @@ EXCLUDED_MOVES).
 
 Each matchup records the strongest move, the strongest "reliable" move (at least
 90% accuracy after weather and abilities) and the strongest reliable move that
-does not need a recharge turn. Crits and speed order are otherwise ignored.
+does not need a recharge turn. Crits are ignored.
 
 Usage:
     python analysis/ohko.py                      # every legal Pokemon, singles
     python analysis/ohko.py --roster megas       # Megas only
     python analysis/ohko.py --doubles            # spread moves take 0.75x
+    python analysis/ohko.py --items none         # no items, except Mega Stones
 """
 
 from __future__ import annotations
@@ -58,7 +64,14 @@ ATTACKER_TIERS = ("max+", "max", "none")
 DEFENDER_TIERS = ("none", "hp", "bulk")
 TIER_PAIRS = [(a, d) for a in ATTACKER_TIERS for d in DEFENDER_TIERS]
 
-ATTACKER_ITEM = "Life Orb"
+ITEMS = {"lifeorb": "Life Orb", "none": None}
+
+# Speed SP in each baseline; the rest of the 66 SP goes to attack or bulk.
+ATTACKER_SPEED_SP = {"max+": 32, "max": 32, "none": 0}
+DEFENDER_SPEED_SP = {"none": 0, "hp": 32, "bulk": 2}
+# Abilities that double Speed under a weather or terrain.
+SPEED_WEATHER = {"Swift Swim": "Rain", "Chlorophyll": "Sun", "Sand Rush": "Sand", "Slush Rush": "Snow"}
+SPEED_TERRAIN = {"Surge Surfer": "Electric"}
 
 # Moves that cannot one-hit KO on turn one of a fresh 1v1, with the reason.
 EXCLUDED_MOVES = {
@@ -136,10 +149,12 @@ class Entry:
     moves: tuple[str, ...]
     types: tuple[str, ...] = ()
     gender: str | None = None  # fixed gender ('M', 'F', 'N'), or None when it can be either
+    base_speed: int = 0
+    held_item: str | None = None  # attacking item for non-Megas
 
     @property
     def attack_item(self) -> str | None:
-        return self.stone if self.mega else ATTACKER_ITEM
+        return self.stone if self.mega else self.held_item
 
     @property
     def defense_item(self) -> str | None:
@@ -163,6 +178,23 @@ def rivalry_genders(attacker: str | None, defender: str | None) -> tuple[str | N
         return attacker, "N"
     mine = attacker if attacker in ("M", "F") else "M"
     return mine, {"M": "F", "F": "M"}[mine]
+
+
+def speed_stat(base: int, sp: int, ability: str, weather: str | None, terrain: str | None) -> int:
+    """Champions Speed with a neutral nature, doubled by weather/terrain abilities."""
+    stat = base + sp + 20
+    boosted_by_weather = weather is not None and SPEED_WEATHER.get(ability) == weather
+    boosted_by_terrain = terrain is not None and SPEED_TERRAIN.get(ability) == terrain
+    return stat * 2 if boosted_by_weather or boosted_by_terrain else stat
+
+
+def priority(move: dict, ability: str, terrain: str | None) -> int:
+    """Move priority, with Gale Wings (Flying moves, at full HP) and Grassy Glide."""
+    if ability == "Gale Wings" and move["type"] == "Flying":
+        return move["priority"] + 1
+    if move["name"] == "Grassy Glide" and terrain == "Grassy":
+        return move["priority"] + 1
+    return move["priority"]
 
 
 def effective_abilities(ability_a: str, ability_d: str) -> tuple[str, str]:
@@ -201,7 +233,7 @@ def accuracy(move: str, base: int | bool, category: str, weather: str | None,
     return round(100 * (acc / 100) ** hits, 1)
 
 
-def load_roster(calc: Calculator, roster: str, excluded: set[str]) -> list[Entry]:
+def load_roster(calc: Calculator, roster: str, excluded: set[str], item: str | None = "Life Orb") -> list[Entry]:
     names = [n for n in calc.legal_species if n not in SKIPPED_SPECIES]
     if roster == "megas":
         names = [n for n in names if "-Mega" in n]
@@ -224,6 +256,8 @@ def load_roster(calc: Calculator, roster: str, excluded: set[str]) -> list[Entry
             moves=tuple(moves),
             types=tuple(info["types"]),
             gender=info["gender"],
+            base_speed=info["base_stats"]["spe"],
+            held_item=item,
         ))
     return entries
 
@@ -355,12 +389,16 @@ def evaluate(a: Entry, d: Entry) -> dict[tuple, dict]:
     for s_index, s in enumerate(setups):
         for a_tier, d_tier in TIER_PAIRS:
             hp = hps.get((s_index, a_tier, d_tier))
+            speed_a = speed_stat(a.base_speed, ATTACKER_SPEED_SP[a_tier], s.effective_a, s.weather, s.terrain)
+            speed_d = speed_stat(d.base_speed, DEFENDER_SPEED_SP[d_tier], s.effective_d, s.weather, s.terrain)
             candidates = []
             for i, (lo, hi) in results.get((s_index, a_tier, d_tier), []):
                 move = a.moves[i]
                 multi = _move(move)["multi_hit"] or s.effective_a == "Parental Bond"
                 can_ohko = not s.block or (s.block == "Sturdy" and multi)
+                prio = priority(_move(move), s.effective_a, s.terrain)
                 candidates.append({
+                    "first": prio > 0 or (prio == 0 and speed_a > speed_d),
                     "move": move,
                     "min": lo, "max": hi,
                     "accuracy": s.accuracy[i],
@@ -373,8 +411,10 @@ def evaluate(a: Entry, d: Entry) -> dict[tuple, dict]:
             reliable = [c for c in candidates if c["accuracy"] >= RELIABLE_ACCURACY]
             best_reliable = max(reliable, key=rank_key, default=None)
             best_no_recharge = max((c for c in reliable if not c["recharge"]), key=rank_key, default=None)
+            best_first = max((c for c in reliable if c["first"]), key=rank_key, default=None)
             out[(s.ability_a, s.ability_d, a_tier, d_tier)] = {
                 "setup": s, "hp": hp, "best": best, "reliable": best_reliable, "no_recharge": best_no_recharge,
+                "first_strike": best_first, "speeds": (speed_a, speed_d),
             }
     return out
 
@@ -407,10 +447,14 @@ def attacker_task(index: int) -> tuple[list[dict], dict]:
                     "possible": all(r["best"]["possible"] for r in per_d),
                     "reliable": all(flag(r, "reliable") for r in per_d),
                     "no_recharge": all(flag(r, "no_recharge") for r in per_d),
+                    "first_strike": all(flag(r, "first_strike") for r in per_d),
                 }
 
     rows = []
-    ranking = {"pokemon": a.name, "mega": a.mega}
+    ranking = {
+        "pokemon": a.name, "mega": a.mega, "item": a.attack_item or "",
+        "base_speed": a.base_speed, "speed_32sp": speed_stat(a.base_speed, 32, "", None, None),
+    }
     for a_tier, d_tier in TIER_PAIRS:
         def score(ability_a):
             s = summaries.get((ability_a, a_tier, d_tier), {})
@@ -423,9 +467,18 @@ def attacker_task(index: int) -> tuple[list[dict], dict]:
         ranking[f"{prefix}: ability"] = " / ".join(tied)
         for key in ("reliable", "no_recharge", "guaranteed", "possible"):
             ranking[f"{prefix}: {key}"] = sum(v[key] for v in summary.values())
+
+        # First-strike OHKOs can favour a different ability (Swift Swim, ...).
+        def first_strike(ab):
+            return sum(v["first_strike"] for v in summaries.get((ab, a_tier, d_tier), {}).values())
+        best_fs = max(first_strike(ab) for ab in a.abilities)
+        ranking[f"{prefix}: first_strike"] = best_fs
+        ranking[f"{prefix}: first_strike ability"] = " / ".join(
+            ab for ab in a.abilities if first_strike(ab) == best_fs)
         for d_name, v in summary.items():
             w = v["worst"]
             s, hp, best, rel, nr = w["setup"], w["hp"], w["best"], w["reliable"], w["no_recharge"]
+            fs = w["first_strike"]
             rows.append({
                 "attacker": a.name,
                 "attacker_ability": " / ".join(tied),
@@ -446,6 +499,10 @@ def attacker_task(index: int) -> tuple[list[dict], dict]:
                 "no_recharge_move": nr["move"] if nr else "",
                 "no_recharge_min_percent": percent(nr["min"], hp) if nr else 0,
                 "no_recharge_ohko": v["no_recharge"],
+                "attacker_speed": w["speeds"][0],
+                "defender_speed": w["speeds"][1],
+                "first_strike_move": fs["move"] if fs else "",
+                "first_strike_ohko": v["first_strike"],
                 "weather": s.weather or "",
                 "terrain": s.terrain or "",
                 "notes": "; ".join(s.notes),
@@ -457,6 +514,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--roster", choices=("all", "megas"), default="all")
     parser.add_argument("--doubles", action="store_true", help="doubles: spread moves take 0.75x damage")
+    parser.add_argument("--items", choices=tuple(ITEMS), default="lifeorb",
+                        help="what non-Megas attack with (Megas always hold their stone)")
     parser.add_argument("--out", type=Path, default=Path(__file__).parent / "output")
     parser.add_argument("--processes", type=int, default=os.cpu_count())
     parser.add_argument("--limit", type=int, help="only run the first N attackers (for testing)")
@@ -470,7 +529,7 @@ def main() -> None:
     excluded = set()
     for name in filter(None, (m.strip() for m in args.exclude.split(","))):
         excluded |= RECHARGE_MOVES if name.lower() == "recharge" else {name}
-    roster = load_roster(Calculator(), args.roster, excluded)
+    roster = load_roster(Calculator(), args.roster, excluded, ITEMS[args.items])
     attackers = range(len(roster))[: args.limit]
     if args.attackers:
         wanted = {n.strip() for n in args.attackers.split(",")}
@@ -488,6 +547,8 @@ def main() -> None:
     print(file=sys.stderr)
 
     name = f"ohko_{args.roster}_{'doubles' if args.doubles else 'singles'}"
+    if args.items != "lifeorb":
+        name += f"_items-{args.items}"
     if args.attackers or args.limit:
         name += "_partial"
     if excluded:
@@ -508,10 +569,11 @@ def main() -> None:
     print(f"Wrote {args.out / name}_matchups.csv.gz and _ranking.csv\n")
     others = len(roster) - 1
     print(f"Reliable OHKOs, max+ attacker vs 32 HP defender (out of {others}):")
-    print(f"  {'':24} {'ability':34} {'90%+':>5} {'no-rchg':>8} {'any':>5}")
+    print(f"  {'':24} {'ability':34} {'90%+':>5} {'first':>6} {'no-rchg':>8} {'any':>5} {'speed':>6}")
     for r in ranking[:25]:
         print(f"  {r['pokemon']:24} {r['max+ vs hp: ability']:34} {r['max+ vs hp: reliable']:5}"
-              f" {r['max+ vs hp: no_recharge']:8} {r['max+ vs hp: guaranteed']:5}")
+              f" {r['max+ vs hp: first_strike']:6} {r['max+ vs hp: no_recharge']:8}"
+              f" {r['max+ vs hp: guaranteed']:5} {r['speed_32sp']:6}")
 
 
 if __name__ == "__main__":

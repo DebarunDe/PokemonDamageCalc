@@ -65,3 +65,21 @@ def test_rivalry_assumes_the_worse_gender_pairing():
     assert ohko.rivalry_genders("M", "F") == ("M", "F")
     # Genderless targets are unaffected.
     assert ohko.rivalry_genders(None, "N") == (None, "N")
+
+
+def test_speed_stat():
+    # Champions Speed: base + SP + 20 with a neutral nature.
+    assert ohko.speed_stat(100, 32, "", None, None) == 152
+    assert ohko.speed_stat(100, 0, "Swift Swim", "Rain", None) == 240
+    assert ohko.speed_stat(100, 0, "Swift Swim", "Sun", None) == 120
+    assert ohko.speed_stat(100, 0, "Swift Swim", None, None) == 120
+    assert ohko.speed_stat(100, 0, "Surge Surfer", None, "Electric") == 240
+
+
+def test_priority_adjustments():
+    brave_bird = {"name": "Brave Bird", "type": "Flying", "priority": 0}
+    glide = {"name": "Grassy Glide", "type": "Grass", "priority": 0}
+    assert ohko.priority(brave_bird, "Gale Wings", None) == 1
+    assert ohko.priority(brave_bird, "Keen Eye", None) == 0
+    assert ohko.priority(glide, "", "Grassy") == 1
+    assert ohko.priority(glide, "", None) == 0

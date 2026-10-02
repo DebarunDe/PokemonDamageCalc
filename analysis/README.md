@@ -7,6 +7,7 @@ python analysis/ohko.py                    # all legal Pokémon, singles (~50 mi
 python analysis/ohko.py --roster megas     # Megas only (~1 min)
 python analysis/ohko.py --doubles          # spread moves take 0.75x
 python analysis/ohko.py --exclude recharge # also drop Hyper Beam, Giga Impact, ...
+python analysis/ohko.py --items none       # non-Megas hold nothing (Megas keep their stones)
 ```
 
 The results go to `analysis/output/` (not committed):
@@ -15,7 +16,7 @@ The results go to `analysis/output/` (not committed):
   the best reliable move and the best reliable move without a recharge turn, damage percentages,
   OHKO flags, weather, terrain and notes.
 - `ohko_<roster>_<mode>_ranking.csv`: per Pokémon, how many others it OHKOs at each baseline pair,
-  and with which ability.
+  the first-strike count, its Speed (base and with 32 SP), and with which ability.
 
 ## Method
 
@@ -35,8 +36,17 @@ Investment follows the stat a move really uses: Body Press attacks with Defense,
 Defense, and Foul Play uses the target's Attack.
 
 **Items:** Megas hold their Mega Stone. Every other Pokémon attacks with Life Orb, the strongest
-damage item in Champions, which has no Choice Band or Specs, and defends with no item. A Focus Sash
+damage item in Champions, which has no Choice Band or Specs, or with nothing when run with
+`--items none`. Defenders hold no item. A Focus Sash
 would stop any OHKO from full HP.
+
+**Speed and first-strike OHKOs:** attackers at `max+` and `max` also put 32 SP in Speed (64 of the
+66). Defenders at `hp` put 32 in Speed, and at `bulk` the 2 SP left over. A **first-strike OHKO** is
+a reliable OHKO landed before the target can move: either the attacker is strictly faster (speed
+ties don't count), or the move has priority. Swift Swim, Chlorophyll, Sand Rush, Slush Rush and
+Surge Surfer double Speed under their weather or terrain. Gale Wings gives Flying moves priority,
+and Grassy Glide has priority in Grassy Terrain. Trick Room, Tailwind and Choice Scarf are not
+modelled.
 
 **Abilities:** every attacker/defender ability pairing is calculated. A KO counts only if it works
 against every ability the defender could have. Each attacker is then ranked with the single ability
