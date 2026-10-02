@@ -26210,8 +26210,9 @@
       return {
         name: m.name,
         type: m.type,
-        category: m.category,
-        base_power: m.bp,
+        // Raw move data leaves out the category of status moves.
+        category: m.category || "Status",
+        base_power: m.basePower || 0,
         priority: m.priority || 0,
         spread: SPREAD_TARGETS.includes(m.target)
       };

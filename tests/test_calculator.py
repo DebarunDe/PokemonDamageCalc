@@ -187,3 +187,14 @@ def test_stat_stages_scale_damage(calc):
     )
     assert (boosted.min, boosted.max) == (plain.min, plain.max)
     assert boosted.description.startswith("+2 ")
+
+
+def test_move_info(calc):
+    assert calc.move("earthquake") == {
+        "name": "Earthquake", "type": "Ground", "category": "Physical",
+        "base_power": 100, "priority": 0, "spread": True,
+    }
+    assert calc.move("Aurora Veil")["category"] == "Status"
+    assert calc.move("Aqua Jet")["priority"] == 1
+    # Weight-based moves have no fixed power.
+    assert calc.move("Low Kick")["base_power"] == 0
