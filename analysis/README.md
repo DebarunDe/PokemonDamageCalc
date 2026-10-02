@@ -73,3 +73,29 @@ that OHKOs the most.
 **Not modelled:** crits, speed order and who moves first, Sucker Punch or Payback conditions
 (Payback assumes the slower user moves second), and items other than those above. Multi-hit
 moves with 2–5 hits assume 3 hits, or 5 with Skill Link.
+
+# Meta modelling (finding undervalued Pokémon)
+
+```bash
+python analysis/ingest.py          # download Showdown ladder stats + Limitless tournaments (first run ~1 h)
+python analysis/signals.py         # usage vs tournament win rate, top-cut conversion, rating lift; backtests
+python analysis/meta_matchups.py   # meta-weighted doubles matchup features for every legal Pokémon
+```
+
+All three take `--regulation` (`M-A`, `M-B`, `M-C`; default the current one) where it applies.
+
+- **`ingest.py`** fills `analysis/data/meta.sqlite` (not committed) with Showdown monthly stats for each
+  Champions VGC regulation (best-of-1 and best-of-3 ladders, all ratings and 1760+): usage, moves,
+  items, abilities, Stat Point spreads, teammates and checks/counters. It also stores Limitless
+  tournaments with 8+ players, with every published team and its win-loss record. Raw downloads are
+  cached under `analysis/data/raw`.
+- **`signals.py`** scores each Pokémon on tournament win rate (shrunk toward the field average), top-cut
+  conversion (actual vs expected top-cut appearances, shrunk toward 1) and ladder lift (1760+ usage vs
+  all-rating usage). The undervalued score is performance minus what usage alone predicts. It also
+  backtests whether one regulation's scores predict usage gains in the next.
+- **`meta_matchups.py`** takes the meta (every Pokémon with 1%+ usage at 1760+, weighted by usage) with
+  each Pokémon's most common set (ability, item, nature + SP, moves). It scores every legal Pokémon on
+  its own common set, or a synthesized one without ladder data, in doubles. Expected OHKO/2HKO shares
+  are computed both ways, attacking and defending, with the common moves and with any legal move.
+  It also reports Speed against the meta (with no speed control, under Tailwind and under Trick Room)
+  and access to utility (Fake Out, Tailwind, Trick Room, redirection, Intimidate, weather, ...).
