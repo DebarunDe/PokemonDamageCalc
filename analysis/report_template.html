@@ -1,0 +1,217 @@
+<title>Champions Meta Scout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; summary header, then ranked tables, then method. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #16202a;
+  --muted: #5a6776;
+  --line: #dbe1e7;
+  --accent: #1d6a87;
+  --gain: #2b7a4b;
+  --loss: #b2463b;
+  --chip: #e8eef3;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #18202a; --ink: #e5eaf0; --muted: #98a5b3; --line: #2a3542;
+    --accent: #62b4d2; --gain: #6cc290; --loss: #e57c70; --chip: #222c38; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #18202a; --ink: #e5eaf0; --muted: #98a5b3; --line: #2a3542;
+  --accent: #62b4d2; --gain: #6cc290; --loss: #e57c70; --chip: #222c38; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font-body); }
+.page { max-width: 1080px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 56px; display: grid; gap: 40px; }
+header { display: grid; gap: 10px; }
+.eyebrow { font: 600 12px/1 var(--font-body); letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+h1, h2 { font-family: var(--font-display); font-weight: 600; letter-spacing: .01em; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(32px, 6vw, 48px); line-height: 1.02; }
+h2 { font-size: 28px; line-height: 1.1; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); font-size: 16px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 28px; margin-top: 6px; }
+.fact { display: grid; gap: 2px; }
+.fact b { font: 600 22px/1.1 var(--font-display); }
+.fact span { font-size: 12px; color: var(--muted); }
+section { display: grid; gap: 14px; }
+.section-head { display: grid; gap: 6px; }
+.section-head p { color: var(--muted); }
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 14px; }
+th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+tbody tr:last-child td { border-bottom: 0; }
+th { font: 600 11px/1.2 var(--font-body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+th button { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+th button[aria-sort="descending"]::after { content: "\25BE"; color: var(--accent); }
+th button[aria-sort="ascending"]::after { content: "\25B4"; color: var(--accent); }
+td.num, th.num { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.name { font-weight: 600; white-space: nowrap; }
+.edge { display: inline-grid; grid-template-columns: 64px auto; gap: 8px; align-items: center; justify-content: end; }
+.bar { position: relative; height: 8px; background: var(--chip); border-radius: 4px; overflow: hidden; }
+.bar i { position: absolute; top: 0; bottom: 0; }
+.bar::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--muted); opacity: .5; }
+.gain { color: var(--gain); } .loss { color: var(--loss); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { font-size: 12px; background: var(--chip); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.note { font-size: 13px; color: var(--muted); }
+.method { display: grid; gap: 12px; }
+.method ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 72ch; }
+.empty { padding: 20px; color: var(--muted); }
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow" id="eyebrow">Pokémon Champions VGC</div>
+    <h1>Underused Pokémon with a winning edge</h1>
+    <p class="lede" id="lede">Tournament results adjusted for player skill, compared with what high-rated ladder players actually use.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="proven-title">
+    <div class="section-head">
+      <h2 id="proven-title">Underused, with an edge</h2>
+      <p>Under 10% ladder usage at 1760+, ranked by <b>edge</b>: tournament wins per game above what their players' records predict, pulled toward zero when the sample is small. Click a column to sort.</p>
+    </div>
+    <div class="table-wrap" id="proven"></div>
+  </section>
+
+  <section aria-labelledby="overused-title">
+    <div class="section-head">
+      <h2 id="overused-title">Popular, but losing ground</h2>
+      <p>2%+ ladder usage with the lowest edge: teams with these win less than their players usually do.</p>
+    </div>
+    <div class="table-wrap" id="overused"></div>
+  </section>
+
+  <section aria-labelledby="potential-title">
+    <div class="section-head">
+      <h2 id="potential-title">Untested on paper</h2>
+      <p>Almost no tournament data, but the usage model, built from matchups against the meta, expects more play than they get. Treat these as leads to test, not picks.</p>
+    </div>
+    <div class="table-wrap" id="potential"></div>
+  </section>
+
+  <section class="method" aria-labelledby="method-title">
+    <h2 id="method-title">How this is measured</h2>
+    <ul id="method-list"></ul>
+    <div class="table-wrap" id="backtests"></div>
+    <p class="note" id="footer"></p>
+  </section>
+</div>
+
+<script>
+const REPORT = /*__REPORT__*/null;
+
+const pct = (x, d = 1) => x == null ? "–" : (100 * x).toFixed(d) + "%";
+const times = x => x == null ? "–" : x.toFixed(2) + "×";
+const pts = x => x == null ? "–" : (x >= 0 ? "+" : "−") + Math.abs(100 * x).toFixed(1);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+function edgeCell(x, scale) {
+  if (x == null) return "–";
+  const w = Math.min(50, Math.abs(x) / scale * 50);
+  const left = x >= 0 ? 50 : 50 - w;
+  const cls = x >= 0 ? "gain" : "loss";
+  return `<span class="edge"><span class="bar"><i style="left:${left}%;width:${w}%;background:var(--${x >= 0 ? "gain" : "loss"})"></i></span><span class="${cls}">${pts(x)}</span></span>`;
+}
+
+function table(el, rows, columns, sortKey, descending = true) {
+  if (!rows.length) { el.innerHTML = `<p class="empty">No Pokémon qualify this month.</p>`; return; }
+  let key = sortKey, desc = descending;
+  const render = () => {
+    const sorted = [...rows].sort((a, b) => {
+      const av = a[key], bv = b[key];
+      if (av == null) return 1; if (bv == null) return -1;
+      const c = typeof av === "string" ? av.localeCompare(bv) : av - bv;
+      return desc ? -c : c;
+    });
+    const head = columns.map(c => `<th class="${c.num ? "num" : ""}" scope="col">${c.sort === false ? c.label :
+      `<button type="button" data-key="${c.key}" aria-sort="${c.key === key ? (desc ? "descending" : "ascending") : "none"}">${c.label}</button>`}</th>`).join("");
+    const body = sorted.map(r => `<tr>${columns.map(c => `<td class="${c.cls || (c.num ? "num" : "")}">${c.render(r)}</td>`).join("")}</tr>`).join("");
+    el.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    el.querySelectorAll("th button").forEach(b => b.addEventListener("click", () => {
+      const k = b.dataset.key;
+      desc = k === key ? !desc : true;
+      key = k;
+      render();
+      el.querySelector(`th button[data-key="${k}"]`)?.focus();
+    }));
+  };
+  render();
+}
+
+function chips(list) {
+  return `<span class="chips">${(list || []).map(r => `<span class="chip">${esc(r)}</span>`).join("")}</span>`;
+}
+
+function edgeColumns(scale) {
+  return [
+    {key: "pokemon", label: "Pokémon", cls: "name", render: r => esc(r.pokemon)},
+    {key: "usage", label: "Ladder usage", num: true, render: r => pct(r.usage)},
+    {key: "games", label: "Games", num: true, render: r => r.games == null ? "–" : Math.round(r.games).toLocaleString()},
+    {key: "win_rate", label: "Win rate", num: true, render: r => pct(r.win_rate)},
+    {key: "pilot_skill", label: "Players' usual", num: true, render: r => pct(r.pilot_skill)},
+    {key: "edge", label: "Edge (pts)", num: true, render: r => edgeCell(r.edge, scale)},
+    {key: "conversion", label: "Top cut", num: true, render: r => times(r.conversion)},
+    {key: "reasons", label: "Why it scores well in matchups", sort: false, render: r => chips(r.reasons)},
+  ];
+}
+
+function main() {
+  if (!REPORT) {
+    document.getElementById("proven").innerHTML = `<p class="empty">No data embedded. Run <code>python analysis/refresh.py</code> to build this page.</p>`;
+    return;
+  }
+  const R = REPORT;
+  const monthName = new Date(R.month + "-01T00:00:00Z").toLocaleString("en", {month: "long", year: "numeric", timeZone: "UTC"});
+  document.getElementById("eyebrow").textContent = `Pokémon Champions VGC · Regulation ${R.regulation} · ${monthName}`;
+  document.getElementById("facts").innerHTML = [
+    [R.tournaments.toLocaleString(), "tournaments"],
+    [R.teams.toLocaleString(), "published teams"],
+    [R.ladder_battles.toLocaleString(), "ladder battles"],
+    [R.pokemon.toLocaleString(), "legal Pokémon scored"],
+  ].map(([b, s]) => `<div class="fact"><b>${b}</b><span>${s}</span></div>`).join("");
+
+  const scale = Math.max(0.01, ...R.proven.concat(R.overused).map(r => Math.abs(r.edge || 0)));
+  table(document.getElementById("proven"), R.proven, edgeColumns(scale), "edge");
+  table(document.getElementById("overused"), R.overused, edgeColumns(scale), "edge", false);
+  table(document.getElementById("potential"), R.potential, [
+    {key: "pokemon", label: "Pokémon", cls: "name", render: r => esc(r.pokemon)},
+    {key: "usage", label: "Ladder usage", num: true, render: r => pct(r.usage, 2)},
+    {key: "expected_usage", label: "Model expects", num: true, render: r => pct(r.expected_usage, 2)},
+    {key: "reasons", label: "Why the model likes it", sort: false, render: r => chips(r.reasons)},
+  ], "expected_usage");
+
+  document.getElementById("method-list").innerHTML = [
+    `<b>Player skill.</b> Each player's skill is their match win rate in their other tournaments. A Pokémon's edge is how much its teams beat that expectation, so strong players bringing it doesn't make it look strong.`,
+    `<b>Sample size.</b> Edges are pulled toward zero by the equivalent of ${R.prior_strength_games.toLocaleString()} average games, the amount the data says true edges vary by. A Pokémon needs many games before its own record dominates.`,
+    `<b>Matchup model.</b> Every legal Pokémon is calculated in doubles against the 1760+ meta's common sets. A ridge model explains ${pct(R.usage_r2, 0)} of the variation in usage (cross-validated). It rewards: ${R.rewards.map(esc).join(", ")}.`,
+    `<b>What it can't see.</b> Team synergy and play patterns beyond the features. Matchup features predict usage but not win edge, so edges come from results alone.`,
+  ].map(t => `<li>${t}</li>`).join("");
+
+  const names = {"edge (with data)": "Edge", "performance": "Performance", "usage_gap": "Model usage gap"};
+  const btRows = [];
+  for (const b of R.backtests) for (const [k, v] of Object.entries(b.scores))
+    btRows.push({transition: `${b.from} → ${b.to}`, score: names[k] || k, ...v});
+  table(document.getElementById("backtests"), btRows, [
+    {key: "transition", label: "Backtest", sort: false, render: r => esc(r.transition)},
+    {key: "score", label: "Score", sort: false, render: r => esc(r.score)},
+    {key: "spearman", label: "Rank correlation with usage change", num: true, sort: false,
+     render: r => `<span class="${r.spearman >= 0.1 ? "gain" : r.spearman < 0 ? "loss" : ""}">${r.spearman >= 0 ? "+" : "−"}${Math.abs(r.spearman).toFixed(2)}</span>`},
+    {key: "top20_rose", label: "Top 20 beat mean reversion", num: true, sort: false, render: r => pct(r.top20_rose, 0)},
+  ], "transition");
+  document.getElementById("footer").textContent =
+    `Data: Pokémon Showdown ladder statistics and Limitless tournament team lists. Generated ${R.generated}. ` +
+    `Usage change is measured beyond the normal drift of rare Pokémon toward average.`;
+}
+main();
+</script>

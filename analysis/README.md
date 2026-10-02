@@ -119,3 +119,19 @@ All three take `--regulation` (`M-A`, `M-B`, `M-C`; default the current one) whe
   usage gap does not predict future usage. Tournament performance does, with Spearman +0.13 and +0.17
   against usage change beyond mean reversion. The features miss mechanics like Unburden, Armor Tail
   and Last Respects, which is why the ranking leans on performance and uses the model to explain it.
+
+## Monthly refresh
+
+```bash
+python analysis/refresh.py                 # ingest new data, rebuild features, model, report page (~1 h from scratch)
+python analysis/refresh.py --skip-ingest   # rebuild from the data already downloaded
+```
+
+This writes `analysis/output/report.json` and `analysis/output/report.html`, which is
+`analysis/report_template.html` with the data embedded. The page ranks underused Pokémon by
+skill-adjusted edge, lists popular Pokémon that are losing ground, lists untested leads from the
+usage model, and shows the backtests.
+
+A new regulation needs three things first: its Showdown commit and mod in `js/package.json`
+(`config.regulations`, then `npm run build`), its Showdown format id in `ingest.py`
+(`SHOWDOWN_FORMATS`), and its backtest snapshots in `model.py`.

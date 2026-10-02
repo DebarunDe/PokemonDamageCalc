@@ -296,7 +296,7 @@ def main() -> None:
     print("  +", ", ".join(f"{k} {v:+.2f}" for k, v in c[::-1].head(8).items()))
     print("  -", ", ".join(f"{k} {v:+.2f}" for k, v in c.head(6).items()))
 
-    proven = df[(df["games"] >= MIN_EDGE_GAMES) & (df["usage"] < POPULAR_USAGE)].sort_values("edge", ascending=False)
+    proven = df[df["win_rate"].notna() & (df["usage"] < POPULAR_USAGE)].sort_values("edge", ascending=False)
     potential = df[(df["games"] < MIN_EDGE_GAMES) & (df["expected_usage"] >= MIN_EXPECTED_USAGE)]
     potential = potential.sort_values("usage_gap", ascending=False)
     proven.to_csv(OUT / f"proven_{args.regulation}_{month}.csv")
