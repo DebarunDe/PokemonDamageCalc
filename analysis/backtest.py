@@ -32,14 +32,20 @@ import pandas as pd
 DB = Path(__file__).parent / "data" / "meta.sqlite"
 OUT = Path(__file__).parent / "output"
 
+# Limitless tournament format -> the Showdown best-of-1 ladders with the same
+# rules (Showdown reopens a regulation under a new id when it returns).
 SERIES = {
-    "champions": {
-        "limitless": ("M-A", "M-B", "M-C"),
-        "showdown": lambda reg: reg.startswith("M-"),
-    },
+    "champions": {"M-A": ("M-A",), "M-B": ("M-B",), "M-C": ("M-C",)},
     "scarlet-violet": {
-        "limitless": ("23S1", "23S2", "23S3", "VGC23", "SVE", "SVF", "SVG", "SVH", "SVI"),
-        "showdown": lambda reg: reg.startswith("gen9vgc") and not reg.endswith("bo3"),
+        "23S1": ("gen9vgc2023series1",),
+        "23S2": ("gen9vgc2023series2",),
+        "23S3": ("gen9vgc2023regulationc",),
+        "VGC23": ("gen9vgc2023regulationd",),
+        "SVE": ("gen9vgc2023regulatione",),
+        "SVF": ("gen9vgc2024regf", "gen9vgc2026regf"),
+        "SVG": ("gen9vgc2024regg", "gen9vgc2025regg"),
+        "SVH": ("gen9vgc2024regh", "gen9vgc2025regh"),
+        "SVI": ("gen9vgc2025regi", "gen9vgc2026regi"),
     },
 }
 MIN_TOURNAMENTS = 8      # months with fewer tournaments in the main format are skipped
@@ -50,8 +56,11 @@ TOP = 20
 
 
 def key(name: str) -> str:
+    """Comparable name across Limitless ids and Showdown names."""
     k = re.sub(r"[^a-z0-9]", "", str(name).lower())
-    return "aegislash" if k.startswith("aegislash") else k
+    if k.startswith(("aegislash", "tatsugiri")):    # Showdown lumps these formes together
+        return k[:9]
+    return k.removesuffix("rider") if k.startswith("calyrex") else k   # calyrex-shadow-rider
 
 
 def spearman(a: pd.Series, b: pd.Series) -> float:
@@ -83,12 +92,25 @@ def all_teams(db: sqlite3.Connection) -> pd.DataFrame:
     return teams
 
 
+def shrink(raw: pd.Series, games: pd.Series) -> tuple[pd.Series, float]:
+    """Empirical-Bayes shrinkage toward the games-weighted mean; returns the prior strength in games."""
+    mean = np.average(raw, weights=games)
+    tau2 = max(np.average((raw - mean) ** 2, weights=games) - np.average(0.25 / games, weights=games), 1e-5)
+    k = 0.25 / tau2
+    return (games * raw + k * mean) / (games + k), k
+
+
+def main_format(teams: pd.DataFrame, month: str) -> str | None:
+    """The format most tournaments were played in that month."""
+    t = teams[teams["month"] == month].drop_duplicates("tournament")
+    return None if t.empty else t["format"].value_counts().idxmax()
+
+
 def month_signal(month: str, teams: pd.DataFrame, members: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame | None:
-    in_month = teams[teams["month"] == month]
-    if in_month.empty:
+    fmt = main_format(teams, month)
+    if fmt is None:
         return None
-    main_format = in_month["format"].value_counts().idxmax()
-    in_month = in_month[in_month["format"] == main_format]
+    in_month = teams[(teams["month"] == month) & (teams["format"] == fmt)]
     if in_month["tournament"].nunique() < MIN_TOURNAMENTS:
         return None
 
@@ -110,34 +132,37 @@ def month_signal(month: str, teams: pd.DataFrame, members: pd.DataFrame, history
     g = g[g["games"] >= MIN_GAMES]
     if len(g) < 20:
         return None
-    raw = (g["wins"] - g["expected"]) / g["games"]
-    w = g["games"]
-    mean = np.average(raw, weights=w)
-    tau2 = max(np.average((raw - mean) ** 2, weights=w) - np.average(0.25 / g["games"], weights=w), 1e-5)
-    k = 0.25 / tau2
-    g["edge"] = (g["games"] * raw + k * mean) / (g["games"] + k)
+    g["edge"], k = shrink((g["wins"] - g["expected"]) / g["games"], g["games"])
     g["win_rate"] = g["wins"] / g["games"]
-    g.attrs.update(format=main_format, tournaments=int(in_month["tournament"].nunique()),
+    g["win_rate_shrunk"], _ = shrink(g["win_rate"], g["games"])
+    g.attrs.update(format=fmt, tournaments=int(in_month["tournament"].nunique()),
                    teams=len(in_month), prior_games=k)
     return g
 
 
 def ladder(db: sqlite3.Connection, series: dict) -> pd.DataFrame:
-    """Main Showdown ladder per month (most battles), and usage at 1760+ and at all ratings."""
+    """Best-of-1 usage for every ladder in the series, at 1760+ and at all ratings."""
+    ladders = sorted({lad for lads in series.values() for lad in lads})
     rows = pd.read_sql_query(
-        "SELECT regulation, month, rating, battles, pokemon, usage FROM showdown_usage WHERE ladder='bo1'", db)
-    rows = rows[rows["regulation"].map(series["showdown"])]
-    battles = rows[rows["rating"] == 0].groupby(["month", "regulation"])["battles"].max().reset_index()
-    main = battles.loc[battles.groupby("month")["battles"].idxmax()].set_index("month")["regulation"]
-    rows = rows[rows["regulation"] == rows["month"].map(main)]
+        f"""SELECT regulation, month, rating, battles, pokemon, usage FROM showdown_usage
+            WHERE ladder='bo1' AND regulation IN ({",".join("?" * len(ladders))})""", db, params=ladders)
     rows["pokemon"] = rows["pokemon"].map(key)
-    return rows.groupby(["month", "rating", "pokemon"], as_index=False).agg(
-        usage=("usage", "sum"), regulation=("regulation", "first"))
+    return rows.groupby(["regulation", "month", "rating", "pokemon"], as_index=False).agg(
+        usage=("usage", "sum"), battles=("battles", "max"))
+
+
+def month_ladder(usage: pd.DataFrame, series: dict, fmt: str, month: str) -> pd.DataFrame | None:
+    """That month's busiest Showdown ladder for a tournament format."""
+    rows = usage[(usage["month"] == month) & usage["regulation"].isin(series.get(fmt, ()))]
+    if rows.empty:
+        return None
+    busiest = rows[rows["rating"] == 0].groupby("regulation")["battles"].max().idxmax()
+    return rows[rows["regulation"] == busiest]
 
 
 def run(db: sqlite3.Connection, name: str) -> pd.DataFrame:
     series = SERIES[name]
-    teams, members = load(db, series["limitless"])
+    teams, members = load(db, tuple(series))
     if teams.empty:
         return pd.DataFrame()
     history = all_teams(db)
@@ -150,10 +175,14 @@ def run(db: sqlite3.Connection, name: str) -> pd.DataFrame:
         sig = month_signal(month, teams, members, history)
         if sig is None:
             continue
-        now = usage[(usage["month"] == month) & (usage["rating"] == 1760)].set_index("pokemon")["usage"]
-        later = usage[(usage["month"] == nxt) & (usage["rating"] == 1760)].set_index("pokemon")["usage"]
+        fmt, fmt_next = sig.attrs["format"], main_format(teams, nxt)
+        lad, lad_next = month_ladder(usage, series, fmt, month), month_ladder(usage, series, fmt_next, nxt)
+        if lad is None or lad_next is None:
+            continue
+        now = lad[lad["rating"] == 1760].set_index("pokemon")["usage"]
+        later = lad_next[lad_next["rating"] == 1760].set_index("pokemon")["usage"]
         # Pokemon missing from next month's ladder entirely were banned or rotated out.
-        legal_next = set(usage[(usage["month"] == nxt) & (usage["rating"] == 0)]["pokemon"])
+        legal_next = set(lad_next[lad_next["rating"] == 0]["pokemon"])
         df = sig[sig.index.isin(legal_next)].copy()
         df["log_now"] = np.log(now.reindex(df.index).fillna(0).clip(lower=USAGE_FLOOR))
         df["log_next"] = np.log(later.reindex(df.index).fillna(0).clip(lower=USAGE_FLOOR))
@@ -161,15 +190,14 @@ def run(db: sqlite3.Connection, name: str) -> pd.DataFrame:
         slope, intercept = np.polyfit(df["log_now"], df["change"], 1)
         df["resid"] = df["change"] - (slope * df["log_now"] + intercept)
         top = df.nlargest(TOP, "edge")
-        reg_now = usage.loc[usage["month"] == month, "regulation"].iloc[0]
-        reg_next = usage.loc[usage["month"] == nxt, "regulation"].iloc[0]
         results.append({
             "series": name, "month": month, "next": nxt,
-            "ladder": reg_now, "next_ladder": reg_next, "new_regulation": reg_now != reg_next,
-            "tournament_format": sig.attrs["format"], "tournaments": sig.attrs["tournaments"],
+            "ladder": lad["regulation"].iloc[0], "next_ladder": lad_next["regulation"].iloc[0],
+            "format": fmt, "next_format": fmt_next, "new_regulation": fmt != fmt_next, "tournaments": sig.attrs["tournaments"],
             "teams": sig.attrs["teams"], "pokemon": len(df),
             "edge_spearman": spearman(df["edge"], df["resid"]),
             "win_rate_spearman": spearman(df["win_rate"], df["resid"]),
+            "win_rate_shrunk_spearman": spearman(df["win_rate_shrunk"], df["resid"]),
             "edge_top_beat": (top["resid"] > 0).mean(),
             "edge_top_median": top["resid"].median(),
             "top_edge": ", ".join(top.index[:5]),
@@ -181,10 +209,11 @@ def summarize(df: pd.DataFrame, label: str) -> str:
     if df.empty:
         return f"{label}: no transitions"
     out = []
-    for col in ("edge_spearman", "win_rate_spearman"):
+    for col, name in (("edge_spearman", "edge"), ("win_rate_spearman", "win rate"),
+                      ("win_rate_shrunk_spearman", "shrunk win rate")):
         x = df[col].dropna()
         t = x.mean() / (x.std(ddof=1) / np.sqrt(len(x))) if len(x) > 1 and x.std(ddof=1) > 0 else float("nan")
-        out.append(f"{col.split('_')[0]:8} mean {x.mean():+.3f}, positive in {(x > 0).sum()}/{len(x)}, t = {t:+.1f}")
+        out.append(f"{name} mean {x.mean():+.3f}, positive in {(x > 0).sum()}/{len(x)}, t = {t:+.1f}")
     beat = df["edge_top_beat"].mean()
     return f"{label} ({len(df)} transitions): " + "; ".join(out) + f"; edge top {TOP} beat mean reversion {beat:.0%}"
 
@@ -201,8 +230,8 @@ def main() -> None:
         raise SystemExit("No months with enough data; run analysis/ingest.py (and `ingest.py history`).")
     OUT.mkdir(exist_ok=True)
     results.to_csv(OUT / "backtest_monthly.csv", index=False)
-    cols = ["series", "month", "next", "new_regulation", "tournaments", "teams", "pokemon",
-            "edge_spearman", "win_rate_spearman", "edge_top_beat", "top_edge"]
+    cols = ["series", "month", "next", "format", "next_format", "tournaments", "teams", "pokemon",
+            "edge_spearman", "win_rate_spearman", "win_rate_shrunk_spearman", "edge_top_beat", "top_edge"]
     with pd.option_context("display.width", 220, "display.max_columns", 20, "display.max_colwidth", 60,
                            "display.float_format", "{:+.3f}".format):
         print(results[cols].to_string(index=False))

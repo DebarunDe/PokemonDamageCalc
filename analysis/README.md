@@ -120,6 +120,36 @@ All three take `--regulation` (`M-A`, `M-B`, `M-C`; default the current one) whe
   against usage change beyond mean reversion. The features miss mechanics like Unburden, Armor Tail
   and Last Respects, which is why the ranking leans on performance and uses the model to explain it.
 
+## Longer backtest (month by month, Champions and Scarlet/Violet)
+
+```bash
+python analysis/ingest.py history     # Scarlet/Violet VGC 2022-12 to 2026-05: Showdown usage + Limitless (~1.5 h)
+python analysis/backtest.py           # writes analysis/output/backtest_monthly.csv
+python analysis/backtest.py --series champions
+```
+
+For every month with 8+ tournaments in its main format, each Pokémon with 50+ tournament games gets
+three scores: skill-adjusted edge (player skill from tournaments up to that month only), raw win rate,
+and win rate shrunk the same way as edge. Each score is compared (Spearman) with the Pokémon's change in
+1760+ usage on the matching Showdown ladder the next month, beyond mean reversion. Limitless formats map to
+Showdown ladders in `SERIES`; a transition into a different tournament format counts as a new regulation.
+
+**Findings (46 transitions: 5 Champions, 41 Scarlet/Violet):**
+
+| | Edge | Win rate | Shrunk win rate |
+|---|---|---|---|
+| All transitions: mean Spearman (positive / total, t) | +0.064 (32/46, t = 2.9) | +0.090 (35/46, t = 4.4) | +0.085 (34/46, t = 4.0) |
+| Within a regulation (32) | +0.091 | +0.108 | +0.108 |
+| Into a new regulation (14) | +0.000 | +0.051 | +0.031 |
+
+- Tournament results lead the ladder by about a month, and the signal is small but consistent across
+  three and a half years and two games.
+- Adjusting for player skill does not help: plain win rate predicts as well or better. Strong players'
+  choices seem to be part of the signal the ladder follows, not noise to remove.
+- Results do not carry over into a new regulation (Scarlet/Violet: about zero over 12 changes), so read
+  each regulation's first month on its own data.
+- The 20 Pokémon with the highest edge beat mean reversion 59% of the time (66% in Champions).
+
 ## Monthly refresh
 
 ```bash
