@@ -71,15 +71,15 @@ td.name { font-weight: 600; white-space: nowrap; }
 <div class="page">
   <header>
     <div class="eyebrow" id="eyebrow">Pokémon Champions VGC</div>
-    <h1>Underused Pokémon with a winning edge</h1>
-    <p class="lede" id="lede">Tournament results adjusted for player skill, compared with what high-rated ladder players actually use.</p>
+    <h1>Underused Pokémon that win</h1>
+    <p class="lede" id="lede">Tournament win rates, compared with what high-rated ladder players actually use.</p>
     <div class="facts" id="facts"></div>
   </header>
 
   <section aria-labelledby="proven-title">
     <div class="section-head">
-      <h2 id="proven-title">Underused, with an edge</h2>
-      <p>Under 10% ladder usage at 1760+, ranked by <b>edge</b>: tournament wins per game above what their players' records predict, pulled toward zero when the sample is small. Click a column to sort.</p>
+      <h2 id="proven-title">Underused, but winning</h2>
+      <p>Under 10% ladder usage at 1760+, ranked by tournament <b>win rate</b> against the field average, pulled toward the average when the sample is small. <b>Skill edge</b> is the same after allowing for how good its players usually are. Click a column to sort.</p>
     </div>
     <div class="table-wrap" id="proven"></div>
   </section>
@@ -87,7 +87,7 @@ td.name { font-weight: 600; white-space: nowrap; }
   <section aria-labelledby="overused-title">
     <div class="section-head">
       <h2 id="overused-title">Popular, but losing ground</h2>
-      <p>2%+ ladder usage with the lowest edge: teams with these win less than their players usually do.</p>
+      <p>2%+ ladder usage with the lowest tournament win rates.</p>
     </div>
     <div class="table-wrap" id="overused"></div>
   </section>
@@ -153,14 +153,14 @@ function chips(list) {
   return `<span class="chips">${(list || []).map(r => `<span class="chip">${esc(r)}</span>`).join("")}</span>`;
 }
 
-function edgeColumns(scale) {
+function edgeColumns(scale, field) {
   return [
     {key: "pokemon", label: "Pokémon", cls: "name", render: r => esc(r.pokemon)},
     {key: "usage", label: "Ladder usage", num: true, render: r => pct(r.usage)},
     {key: "games", label: "Games", num: true, render: r => r.games == null ? "–" : Math.round(r.games).toLocaleString()},
-    {key: "win_rate", label: "Win rate", num: true, render: r => pct(r.win_rate)},
+    {key: "win_rate_shrunk", label: "Win rate vs field (pts)", num: true, render: r => edgeCell(r.win_rate_shrunk == null ? null : r.win_rate_shrunk - field, scale)},
+    {key: "edge", label: "Skill edge (pts)", num: true, render: r => edgeCell(r.edge, scale)},
     {key: "pilot_skill", label: "Players' usual", num: true, render: r => pct(r.pilot_skill)},
-    {key: "edge", label: "Edge (pts)", num: true, render: r => edgeCell(r.edge, scale)},
     {key: "conversion", label: "Top cut", num: true, render: r => times(r.conversion)},
     {key: "reasons", label: "Why it scores well in matchups", sort: false, render: r => chips(r.reasons)},
   ];
@@ -181,9 +181,11 @@ function main() {
     [R.pokemon.toLocaleString(), "legal Pokémon scored"],
   ].map(([b, s]) => `<div class="fact"><b>${b}</b><span>${s}</span></div>`).join("");
 
-  const scale = Math.max(0.01, ...R.proven.concat(R.overused).map(r => Math.abs(r.edge || 0)));
-  table(document.getElementById("proven"), R.proven, edgeColumns(scale), "edge");
-  table(document.getElementById("overused"), R.overused, edgeColumns(scale), "edge", false);
+  const field = R.field_win_rate ?? 0.5;
+  const scale = Math.max(0.01, ...R.proven.concat(R.overused).flatMap(r =>
+    [Math.abs(r.edge || 0), Math.abs(r.win_rate_shrunk == null ? 0 : r.win_rate_shrunk - field)]));
+  table(document.getElementById("proven"), R.proven, edgeColumns(scale, field), "win_rate_shrunk");
+  table(document.getElementById("overused"), R.overused, edgeColumns(scale, field), "win_rate_shrunk", false);
   table(document.getElementById("potential"), R.potential, [
     {key: "pokemon", label: "Pokémon", cls: "name", render: r => esc(r.pokemon)},
     {key: "usage", label: "Ladder usage", num: true, render: r => pct(r.usage, 2)},
@@ -192,13 +194,14 @@ function main() {
   ], "expected_usage");
 
   document.getElementById("method-list").innerHTML = [
-    `<b>Player skill.</b> Each player's skill is their match win rate in their other tournaments. A Pokémon's edge is how much its teams beat that expectation, so strong players bringing it doesn't make it look strong.`,
-    `<b>Sample size.</b> Edges are pulled toward zero by the equivalent of ${R.prior_strength_games.toLocaleString()} average games, the amount the data says true edges vary by. A Pokémon needs many games before its own record dominates.`,
+    `<b>Win rate.</b> Game wins over games played in this regulation's tournaments, pulled toward the field average (${pct(field)}) by the equivalent of ${(R.win_rate_prior_games ?? 0).toLocaleString()} games, the amount the data says true win rates vary by. A Pokémon needs many games before its own record dominates.`,
+    `<b>Why not adjust for player skill?</b> Skill edge measures how much a Pokémon's teams beat their players' records in other tournaments (shrunk by ${R.prior_strength_games.toLocaleString()} games). It's shown for context, but in backtests it predicted ladder trends no better than plain win rate: what strong players pick and win with is part of the signal.`,
+    ...(R.monthly_backtest ? [`<b>Track record.</b> Over ${R.monthly_backtest.transitions} month-to-month transitions in Champions and Scarlet/Violet VGC, a Pokémon's tournament win rate ranked next month's ladder usage change with an average correlation of ${R.monthly_backtest.win_rate.mean >= 0 ? "+" : "−"}${Math.abs(R.monthly_backtest.win_rate.mean).toFixed(2)} (positive in ${R.monthly_backtest.win_rate.positive} of ${R.monthly_backtest.transitions}), and ${R.monthly_backtest.win_rate.within >= 0 ? "+" : "−"}${Math.abs(R.monthly_backtest.win_rate.within).toFixed(2)} within a regulation. A small but steady lead; it doesn't carry into a new regulation.`] : []),
     `<b>Matchup model.</b> Every legal Pokémon is calculated in doubles against the 1760+ meta's common sets. A ridge model explains ${pct(R.usage_r2, 0)} of the variation in usage (cross-validated). It rewards: ${R.rewards.map(esc).join(", ")}.`,
-    `<b>What it can't see.</b> Team synergy and play patterns beyond the features. Matchup features predict usage but not win edge, so edges come from results alone.`,
+    `<b>What it can't see.</b> Team synergy and play patterns beyond the features. Matchup features predict usage but not win rates, so win rates come from results alone.`,
   ].map(t => `<li>${t}</li>`).join("");
 
-  const names = {"edge (with data)": "Edge", "performance": "Performance", "usage_gap": "Model usage gap"};
+  const names = {"win rate": "Win rate", "edge (with data)": "Skill edge", "performance": "Performance", "usage_gap": "Model usage gap"};
   const btRows = [];
   for (const b of R.backtests) for (const [k, v] of Object.entries(b.scores))
     btRows.push({transition: `${b.from} → ${b.to}`, score: names[k] || k, ...v});

@@ -103,8 +103,8 @@ All three take `--regulation` (`M-A`, `M-B`, `M-C`; default the current one) whe
   matchup features plus is-Mega, base stat total and counter pressure (how often the meta beats it in
   ladder games). It's cross-validated, so each Pokémon is scored by a model that never saw it. It
   writes two lists:
-  - **proven**: Pokémon under 10% ladder usage, ranked by tournament performance, each with the
-    model's top reasons.
+  - **proven**: Pokémon under 10% ladder usage, ranked by tournament win rate shrunk toward the field
+    average by sample size (empirical Bayes), each with its skill-adjusted edge and the model's top reasons.
   - **potential**: Pokémon the model rates highly but with too little tournament data to judge. This
     is a speculative watchlist.
 
@@ -149,6 +149,9 @@ Showdown ladders in `SERIES`; a transition into a different tournament format co
 - Results do not carry over into a new regulation (Scarlet/Violet: about zero over 12 changes), so read
   each regulation's first month on its own data.
 - The 20 Pokémon with the highest edge beat mean reversion 59% of the time (66% in Champions).
+- So the report ranks by shrunk win rate and shows edge alongside it. A full run (`--series all`) also
+  writes `analysis/backtest_summary.json`, which is committed so the monthly refresh can show the track
+  record without the Scarlet/Violet download.
 
 ## Monthly refresh
 
@@ -159,7 +162,7 @@ python analysis/refresh.py --skip-ingest   # rebuild from the data already downl
 
 This writes `analysis/output/report.json` and `analysis/output/report.html`, which is
 `analysis/report_template.html` with the data embedded. The page ranks underused Pokémon by
-skill-adjusted edge, lists popular Pokémon that are losing ground, lists untested leads from the
+shrunk tournament win rate (with skill-adjusted edge beside it), lists popular Pokémon that are losing ground, lists untested leads from the
 usage model, and shows the backtests.
 
 A new regulation needs three things first: its Showdown commit and mod in `js/package.json`

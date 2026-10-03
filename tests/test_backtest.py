@@ -44,3 +44,16 @@ def test_store_usage_table(tmp_path):
     assert rows[0][1] == pytest.approx(0.5077012)
     assert rows[0][2] == 1234
     assert len(rows) == 2
+
+
+def test_summary_counts_within_and_new_regulation():
+    df = pd.DataFrame({
+        "series": ["a", "a", "b"], "month": ["2024-01", "2024-02", "2024-03"], "next": ["2024-02", "2024-03", "2024-04"],
+        "new_regulation": [False, True, False],
+        "win_rate_shrunk_spearman": [0.2, -0.1, 0.1], "edge_spearman": [0.1, 0.0, 0.2],
+    })
+    s = backtest.summary(df)
+    assert s["transitions"] == 3 and s["last_month"] == "2024-04"
+    assert s["win_rate"]["positive"] == 2
+    assert s["win_rate"]["within"] == pytest.approx(0.15)
+    assert s["edge"]["new_regulation"] == pytest.approx(0.0)

@@ -1,0 +1,21 @@
+{
+ "transitions": 46,
+ "series": [
+  "champions",
+  "scarlet-violet"
+ ],
+ "first_month": "2022-12",
+ "last_month": "2026-09",
+ "win_rate": {
+  "mean": 0.085,
+  "positive": 34,
+  "within": 0.108,
+  "new_regulation": 0.031
+ },
+ "edge": {
+  "mean": 0.064,
+  "positive": 32,
+  "within": 0.091,
+  "new_regulation": 0.0
+ }
+}

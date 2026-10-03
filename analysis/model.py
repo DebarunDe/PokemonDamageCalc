@@ -18,18 +18,23 @@ Pokemon the model did not train on, so a Pokemon's own usage never leaks in.
 
 Each Pokemon's top reasons are the ridge model's largest feature contributions.
 
+    win_rate_shrunk
+                tournament win rate pulled toward the field average in
+                proportion to sample size (empirical Bayes: the prior strength
+                comes from how much true win rates vary). The ranking score.
     edge        tournament wins per game above what the pilots' skill predicts,
-                pulled toward a prior in proportion to sample size. The prior is
-                the features' prediction when that beats the average out of
-                sample, else the average (so far, always the average: true edges
-                are small, about +-3 points, and features don't predict them)
+                shrunk the same way. The prior is the features' prediction when
+                that beats the average out of sample, else the average (so far,
+                always the average: features don't predict edges)
 
-The backtests score one regulation and check which score predicts usage
-change into the next, beyond regression to the mean. Edge and performance do
-(Spearman ~ +0.13 to +0.18); usage_gap does not. So the report has two lists:
+The backtests check which score predicts usage change beyond regression to the
+mean. Win rate, edge and performance do; usage_gap does not. backtest.py runs
+the same check over 46 monthly transitions (Champions and Scarlet/Violet):
+shrunk win rate predicts as well as or better than skill-adjusted edge, so it is
+the ranking score and edge is shown alongside. The report has two lists:
 
-    proven      edge among Pokemon under POPULAR_USAGE with tournament data
-                (the validated signal), with the usage model's reasons
+    proven      Pokemon under POPULAR_USAGE with tournament data, by shrunk win
+                rate (the validated signal), with the usage model's reasons
     potential   large usage_gap with little tournament data: a speculative
                 watchlist of Pokemon that look strong on paper but are untested
 
@@ -56,6 +61,7 @@ from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, str(Path(__file__).parent))
 import signals  # noqa: E402
+from backtest import shrink  # noqa: E402
 from champcalc import Calculator  # noqa: E402
 
 DB = Path(__file__).parent / "data" / "meta.sqlite"
@@ -224,8 +230,17 @@ def estimate_edge(df: pd.DataFrame, regulation: str, db, seed: int = 0) -> tuple
     edge = (games * raw + k * prior) / (games + k)
     out = pd.DataFrame({"games": games, "edge_observed": np.where(games > 0, raw, np.nan),
                         "edge_prior": prior, "edge": edge}, index=df.index)
+
+    # Plain win rate, shrunk toward the field the same way (no skill adjustment).
+    wins = t["wins"].reindex(df.index).fillna(0)
+    played = pd.Series(games, index=df.index)
+    seen = played > 0
+    wr_shrunk, wr_k = shrink(wins[seen] / played[seen], played[seen])
+    field = float(wins[seen].sum() / played[seen].sum())
+    out["win_rate_shrunk"] = wr_shrunk.reindex(df.index)
     return out, {"edge_prior_r2": round(prior_r2, 3), "edge_prior": "model" if prior_r2 > 0 else "average",
-                 "prior_strength_games": round(k), "edge_pokemon": int(has.sum())}
+                 "prior_strength_games": round(k), "edge_pokemon": int(has.sum()),
+                 "win_rate_prior_games": round(wr_k), "field_win_rate": round(field, 4)}
 
 
 def score(regulation: str, month: str, db) -> tuple[pd.DataFrame, dict]:
@@ -242,10 +257,11 @@ def score(regulation: str, month: str, db) -> tuple[pd.DataFrame, dict]:
     else:
         df["performance"] = np.nan
         df["edge"] = np.nan
+        df["win_rate_shrunk"] = np.nan
     gap_z = zscore(df["usage_gap"])
     perf_z = zscore(df["performance"])
     df["undervalued"] = np.where(df["performance"].notna(), (gap_z + perf_z) / 2, gap_z)
-    return df.sort_values("edge", ascending=False), meta
+    return df.sort_values("win_rate_shrunk", ascending=False), meta
 
 
 def spearman(a: pd.Series, b: pd.Series) -> float:
@@ -266,7 +282,8 @@ def backtest(db, before: tuple[str, str], after: tuple[str, str]) -> dict:
                                 ("performance", with_perf, "performance"),
                                 ("undervalued", with_perf, "undervalued"),
                                 ("edge", df, "edge"),
-                                ("edge (with data)", with_perf, "edge")):
+                                ("edge (with data)", with_perf, "edge"),
+                                ("win rate", with_perf, "win_rate_shrunk")):
         top = frame.nlargest(20, column)
         result[name] = {
             "spearman": spearman(frame[column], frame["change_beyond_reversion"]),
@@ -296,23 +313,26 @@ def main() -> None:
     print("  +", ", ".join(f"{k} {v:+.2f}" for k, v in c[::-1].head(8).items()))
     print("  -", ", ".join(f"{k} {v:+.2f}" for k, v in c.head(6).items()))
 
-    proven = df[df["win_rate"].notna() & (df["usage"] < POPULAR_USAGE)].sort_values("edge", ascending=False)
+    proven = df[df["win_rate"].notna() & (df["usage"] < POPULAR_USAGE)].sort_values("win_rate_shrunk",
+                                                                                     ascending=False)
     potential = df[(df["games"] < MIN_EDGE_GAMES) & (df["expected_usage"] >= MIN_EXPECTED_USAGE)]
     potential = potential.sort_values("usage_gap", ascending=False)
     proven.to_csv(OUT / f"proven_{args.regulation}_{month}.csv")
     potential.to_csv(OUT / f"potential_{args.regulation}_{month}.csv")
-    cols = ["pokemon", "usage", "games", "win_rate", "pilot_skill", "edge", "conversion", "ladder_lift", "reasons"]
+    cols = ["pokemon", "usage", "games", "win_rate_shrunk", "edge", "pilot_skill", "conversion", "ladder_lift",
+            "reasons"]
     pcols = ["pokemon", "usage", "expected_usage", "usage_gap", "reasons"]
     with pd.option_context("display.width", 220, "display.max_columns", 20, "display.max_colwidth", 80,
                            "display.float_format", "{:.3f}".format):
         print(f"\nEdge model: prior {meta.get('edge_prior')} (cross-validated R^2 {meta.get('edge_prior_r2')}), "
-              f"prior strength {meta.get('prior_strength_games')} games")
-        print(f"\nProven but underused (ladder usage under {POPULAR_USAGE:.0%}, by skill-adjusted tournament edge):")
+              f"prior strength {meta.get('prior_strength_games')} games; win rate prior strength "
+              f"{meta.get('win_rate_prior_games')} games")
+        print(f"\nProven but underused (ladder usage under {POPULAR_USAGE:.0%}, by shrunk tournament win rate):")
         print(proven[cols].head(args.top).to_string(index=False))
         print("\nUntested potential (little tournament data; model expects more usage):")
         print(potential[pcols].head(15).to_string(index=False))
-        print("\nUnderperforming relative to popularity (2%+ usage, lowest edge):")
-        print(df[(df["usage"] >= 0.02) & (df["games"] >= MIN_EDGE_GAMES)].nsmallest(8, "edge")[cols]
+        print("\nUnderperforming relative to popularity (2%+ usage, lowest shrunk win rate):")
+        print(df[(df["usage"] >= 0.02) & (df["games"] >= MIN_EDGE_GAMES)].nsmallest(8, "win_rate_shrunk")[cols]
               .to_string(index=False))
 
     for before, after in BACKTESTS:
@@ -320,7 +340,7 @@ def main() -> None:
         print(f"\nBacktest {before[0]} {before[1]} -> {after[0]} {after[1]} "
               f"({r['n']} Pokemon, {r['n_tournament']} with tournament data). "
               f"Does each score predict usage change beyond mean reversion?")
-        for name in ("usage_gap", "performance", "undervalued", "edge", "edge (with data)"):
+        for name in ("usage_gap", "performance", "undervalued", "edge", "edge (with data)", "win rate"):
             x = r[name]
             print(f"  {name:16} Spearman {x['spearman']:+.3f}; top 20: median change {x['top20_median']:+.2f} "
                   f"log-usage, {x['top20_rose']:.0%} beat mean reversion  ({', '.join(x['top'][:5])})")

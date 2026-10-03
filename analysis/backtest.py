@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sqlite3
 from pathlib import Path
@@ -31,6 +32,7 @@ import pandas as pd
 
 DB = Path(__file__).parent / "data" / "meta.sqlite"
 OUT = Path(__file__).parent / "output"
+SUMMARY = Path(__file__).parent / "backtest_summary.json"   # committed; read by refresh.py
 
 # Limitless tournament format -> the Showdown best-of-1 ladders with the same
 # rules (Showdown reopens a regulation under a new id when it returns).
@@ -218,6 +220,17 @@ def summarize(df: pd.DataFrame, label: str) -> str:
     return f"{label} ({len(df)} transitions): " + "; ".join(out) + f"; edge top {TOP} beat mean reversion {beat:.0%}"
 
 
+def summary(df: pd.DataFrame) -> dict:
+    """Headline numbers for the report page."""
+    out = {"transitions": len(df), "series": sorted(df["series"].unique()),
+           "first_month": df["month"].min(), "last_month": df["next"].max()}
+    for col, name in (("win_rate_shrunk_spearman", "win_rate"), ("edge_spearman", "edge")):
+        out[name] = {"mean": round(float(df[col].mean()), 3), "positive": int((df[col] > 0).sum()),
+                     "within": round(float(df.loc[~df["new_regulation"], col].mean()), 3),
+                     "new_regulation": round(float(df.loc[df["new_regulation"], col].mean()), 3)}
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--series", choices=("all", *SERIES), default="all")
@@ -230,6 +243,8 @@ def main() -> None:
         raise SystemExit("No months with enough data; run analysis/ingest.py (and `ingest.py history`).")
     OUT.mkdir(exist_ok=True)
     results.to_csv(OUT / "backtest_monthly.csv", index=False)
+    if args.series == "all":
+        SUMMARY.write_text(json.dumps(summary(results), indent=1) + "\n")
     cols = ["series", "month", "next", "format", "next_format", "tournaments", "teams", "pokemon",
             "edge_spearman", "win_rate_spearman", "win_rate_shrunk_spearman", "edge_top_beat", "top_edge"]
     with pd.option_context("display.width", 220, "display.max_columns", 20, "display.max_colwidth", 60,

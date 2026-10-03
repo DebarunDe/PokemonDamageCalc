@@ -91,6 +91,13 @@ def rows(frame, columns) -> list[dict]:
     return out
 
 
+def monthly_backtest() -> dict | None:
+    """backtest.py's month-by-month summary (committed, so the monthly refresh
+    has it without downloading the Scarlet/Violet history)."""
+    path = HERE / "backtest_summary.json"
+    return json.loads(path.read_text()) if path.exists() else None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--skip-ingest", action="store_true")
@@ -113,9 +120,9 @@ def main() -> None:
         """SELECT battles FROM showdown_usage WHERE regulation=? AND month=? AND ladder='bo1' AND rating=0
            LIMIT 1""", (regulation, month)).fetchone()
 
-    columns = ["pokemon", "usage", "games", "win_rate", "pilot_skill", "edge", "conversion", "ladder_lift"]
+    columns = ["pokemon", "usage", "games", "win_rate_shrunk", "pilot_skill", "edge", "conversion", "ladder_lift"]
     proven = df[df["win_rate"].notna() & (df["usage"] < model.POPULAR_USAGE)]
-    overused = df[(df["usage"] >= 0.02) & (df["games"] >= model.MIN_EDGE_GAMES)].nsmallest(12, "edge")
+    overused = df[(df["usage"] >= 0.02) & (df["games"] >= model.MIN_EDGE_GAMES)].nsmallest(12, "win_rate_shrunk")
     potential = df[(df["games"] < model.MIN_EDGE_GAMES) & (df["expected_usage"] >= model.MIN_EXPECTED_USAGE)]
     backtests = []
     for before, after in model.BACKTESTS:
@@ -125,7 +132,7 @@ def main() -> None:
             "scores": {name: {"spearman": number(r[name]["spearman"], 3),
                               "top20_median": number(r[name]["top20_median"], 3),
                               "top20_rose": number(r[name]["top20_rose"], 3)}
-                       for name in ("edge (with data)", "performance", "usage_gap")},
+                       for name in ("win rate", "edge (with data)", "performance", "usage_gap")},
         })
     report = {
         "regulation": regulation,
@@ -138,8 +145,11 @@ def main() -> None:
         "usage_r2": number(meta["r2"][meta["model"]], 3),
         "edge_prior": meta.get("edge_prior"),
         "prior_strength_games": meta.get("prior_strength_games"),
+        "win_rate_prior_games": meta.get("win_rate_prior_games"),
+        "field_win_rate": meta.get("field_win_rate"),
+        "monthly_backtest": monthly_backtest(),
         "rewards": [label(k) for k, v in meta["coefficients"][::-1].items() if v > 0][:8],
-        "proven": rows(proven.sort_values("edge", ascending=False).head(30), columns),
+        "proven": rows(proven.sort_values("win_rate_shrunk", ascending=False).head(30), columns),
         "overused": rows(overused, columns),
         "potential": rows(potential.sort_values("usage_gap", ascending=False).head(12),
                           ["pokemon", "usage", "expected_usage", "usage_gap"]),
