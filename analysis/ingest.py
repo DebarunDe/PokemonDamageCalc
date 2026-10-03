@@ -14,6 +14,7 @@ Usage:
     python analysis/ingest.py                 # everything
     python analysis/ingest.py showdown        # ladder stats only
     python analysis/ingest.py limitless       # tournaments only
+    python analysis/ingest.py history         # Scarlet/Violet VGC 2022-26, for longer backtests
 """
 
 from __future__ import annotations
@@ -45,6 +46,12 @@ SHOWDOWN_FORMATS = {
     "M-C": "gen9championsvgc2026regmc",
 }
 RATINGS = (0, 1760)
+# Scarlet/Violet VGC, for backtesting further back than Champions: Limitless
+# format codes (Series 1-3 = Regulation A-C, VGC23 = Regulation D, then E-I),
+# and the Showdown ladder prefix whose monthly usage tables to load.
+HISTORY_LIMITLESS_FORMATS = ("23S1", "23S2", "23S3", "VGC23", "SVE", "SVF", "SVG", "SVH", "SVI")
+HISTORY_SHOWDOWN_PREFIX = "gen9vgc"
+HISTORY_FIRST_MONTH = "2022-11"
 # Limitless tournaments smaller than this are mostly practice rooms.
 MIN_PLAYERS = 8
 REQUEST_DELAY = 0.5  # seconds between uncached requests, to be polite
@@ -130,6 +137,35 @@ def ingest_showdown(db: sqlite3.Connection, months: list[str] | None = None) -> 
     db.commit()
 
 
+def ingest_showdown_history(db: sqlite3.Connection) -> None:
+    """Usage only (the small text tables) for every Scarlet/Violet VGC ladder."""
+    months = [m for m in showdown_months() if m >= HISTORY_FIRST_MONTH]
+    current = max(months)
+    for month in months:
+        listing = fetch(f"{SHOWDOWN}/{month}/", json_response=False) or ""
+        formats = sorted(set(re.findall(rf'href="({HISTORY_SHOWDOWN_PREFIX}[a-z0-9]*?)-(?:{"|".join(map(str, RATINGS))}).txt"',
+                                        listing)))
+        for fmt in formats:
+            ladder = "bo3" if fmt.endswith("bo3") else "bo1"
+            for rating in RATINGS:
+                cache = None if month == current else RAW / "showdown" / month / f"{fmt}-{rating}.txt.gz"
+                text = fetch(f"{SHOWDOWN}/{month}/{fmt}-{rating}.txt", cache, json_response=False)
+                if text:
+                    store_usage_table(db, fmt, month, ladder, rating, text)
+        print(f"  showdown history {month}: {len(formats)} formats")
+    db.commit()
+
+
+def store_usage_table(db, regulation, month, ladder, rating, text) -> None:
+    battles = int(re.search(r"Total battles:\s*(\d+)", text).group(1))
+    rows = []
+    for m in re.finditer(r"^\s*\|\s*\d+\s*\|\s*(.+?)\s*\|\s*([\d.]+)%\s*\|\s*(\d+)\s*\|", text, re.M):
+        rows.append((regulation, month, ladder, rating, battles, m.group(1), float(m.group(2)) / 100, int(m.group(3))))
+    db.execute("DELETE FROM showdown_usage WHERE regulation=? AND month=? AND ladder=? AND rating=?",
+               (regulation, month, ladder, rating))
+    db.executemany("INSERT INTO showdown_usage VALUES (?,?,?,?,?,?,?,?)", rows)
+
+
 def store_chaos(db, regulation, month, ladder, rating, chaos) -> None:
     key = (regulation, month, ladder, rating)
     battles = chaos["info"]["number of battles"]
@@ -182,9 +218,9 @@ class SpeciesNames:
         return self.by_id.get(sid) or species_id
 
 
-def ingest_limitless(db: sqlite3.Connection) -> None:
+def ingest_limitless(db: sqlite3.Connection, formats=tuple(SHOWDOWN_FORMATS)) -> None:
     names = SpeciesNames()
-    for regulation in SHOWDOWN_FORMATS:
+    for regulation in formats:
         tournaments, page = [], 1
         while True:
             batch = fetch(f"{LIMITLESS}/tournaments?game=VGC&format={regulation}&limit=500&page={page}")
@@ -225,7 +261,8 @@ def ingest_limitless(db: sqlite3.Connection) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("source", nargs="?", choices=("all", "showdown", "limitless"), default="all")
+    parser.add_argument("source", nargs="?", choices=("all", "showdown", "limitless", "history"), default="all",
+                        help="history: Scarlet/Violet VGC usage and tournaments, for longer backtests")
     parser.add_argument("--months", help="comma-separated Showdown months, e.g. 2026-08,2026-09")
     args = parser.parse_args()
 
@@ -236,6 +273,9 @@ def main() -> None:
         ingest_showdown(db, args.months.split(",") if args.months else None)
     if args.source in ("all", "limitless"):
         ingest_limitless(db)
+    if args.source == "history":
+        ingest_showdown_history(db)
+        ingest_limitless(db, HISTORY_LIMITLESS_FORMATS)
     for table in ("showdown_usage", "showdown_details", "showdown_checks", "tournaments", "team_members"):
         print(f"{table}: {db.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]} rows")
     db.close()
