@@ -57,3 +57,12 @@ def test_summary_counts_within_and_new_regulation():
     assert s["win_rate"]["positive"] == 2
     assert s["win_rate"]["within"] == pytest.approx(0.15)
     assert s["edge"]["new_regulation"] == pytest.approx(0.0)
+
+
+def test_limitless_megas_from_differently_named_formes():
+    names = ingest.SpeciesNames()
+    assert names("floette-eternal", "Floettite") == "Floette-Mega"
+    assert names("floette-eternal", "Choice Scarf") == "Floette-Eternal"
+    assert names("Meowstic-F-Mega", "Meowsticite") == "Meowstic-F-Mega"
+    assert names("raichu", "Raichunite Y") == "Raichu-Mega-Y"
+    assert names("raichu-alola", "Raichunite Y") == "Raichu-Alola"

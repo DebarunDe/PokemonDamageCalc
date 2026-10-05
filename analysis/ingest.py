@@ -199,11 +199,16 @@ class SpeciesNames:
         self.calc = calc
         self.by_id = {}
         self.mega_by_stone = {}
+        self.mega_by_family = {}
         for name in calc.all_species:
             self.by_id.setdefault(self._id(name), name)
             stone = calc.species(name)["mega_stone"]
             if stone and "-Mega" in name:
                 self.mega_by_stone[(self._id(name.split("-Mega")[0]), stone)] = name
+                # A Mega whose base forme has another name (Floette-Mega comes from
+                # Floette-Eternal) is also matched on its family name.
+                if name.split("-Mega")[0] not in calc.all_species:
+                    self.mega_by_family.setdefault((self._id(name.split("-")[0]), stone), []).append(name)
         self.by_id["aegislash"] = "Aegislash-Both"
 
     @staticmethod
@@ -213,13 +218,28 @@ class SpeciesNames:
     def __call__(self, species_id: str, item: str | None) -> str:
         sid = self._id(species_id)
         mega = self.mega_by_stone.get((sid, item))
+        family = self.mega_by_family.get((self._id(re.split(r"[- ]", species_id)[0]), item), [])
+        if not mega and len(family) == 1 and "-Mega" not in species_id:
+            mega = family[0]
         if mega:
             return mega
         return self.by_id.get(sid) or species_id
 
 
+def remap_megas(db: sqlite3.Connection, names: "SpeciesNames") -> None:
+    """Re-apply the Mega mapping to stored team members (after a mapping fix)."""
+    pairs = db.execute("SELECT DISTINCT pokemon, item FROM team_members WHERE item IS NOT NULL").fetchall()
+    for pokemon, item in pairs:
+        mapped = names(pokemon, item)
+        if mapped != pokemon and "-Mega" in mapped:
+            db.execute("UPDATE team_members SET pokemon=? WHERE pokemon=? AND item=?", (mapped, pokemon, item))
+            print(f"  remapped {pokemon} + {item} -> {mapped}")
+    db.commit()
+
+
 def ingest_limitless(db: sqlite3.Connection, formats=tuple(SHOWDOWN_FORMATS)) -> None:
     names = SpeciesNames()
+    remap_megas(db, names)
     for regulation in formats:
         tournaments, page = [], 1
         while True:
