@@ -6,6 +6,8 @@ Sources:
   Champions VGC regulation, best-of-1 and best-of-3, at several rating cutoffs.
 - Limitless (play.limitlesstcg.com): tournaments, standings, win/loss records
   and full team lists.
+- RK9 Labs (rk9.gg): official Regionals, Internationals and Worlds - Masters
+  team lists, standings and match records (see rk9.py).
 
 Raw downloads are cached under analysis/data/raw, so re-running only fetches
 what is new (finished tournaments and past months never change).
@@ -14,6 +16,7 @@ Usage:
     python analysis/ingest.py                 # everything
     python analysis/ingest.py showdown        # ladder stats only
     python analysis/ingest.py limitless       # tournaments only
+    python analysis/ingest.py rk9             # official events only
     python analysis/ingest.py history         # Scarlet/Violet VGC 2022-26, for longer backtests
 """
 
@@ -31,6 +34,8 @@ from pathlib import Path
 
 from champcalc import Calculator
 
+import rk9
+
 DATA = Path(__file__).parent / "data"
 RAW = DATA / "raw"
 DB = DATA / "meta.sqlite"
@@ -46,6 +51,8 @@ SHOWDOWN_FORMATS = {
     "M-C": "gen9championsvgc2026regmc",
 }
 RATINGS = (0, 1760)
+# Official events (RK9) before this are from earlier games and are not checked.
+CHAMPIONS_START = "2026-04-01"
 # Scarlet/Violet VGC, for backtesting further back than Champions: Limitless
 # format codes (Series 1-3 = Regulation A-C, VGC23 = Regulation D, then E-I),
 # and the Showdown ladder prefix whose monthly usage tables to load.
@@ -279,9 +286,15 @@ def ingest_limitless(db: sqlite3.Connection, formats=tuple(SHOWDOWN_FORMATS)) ->
         db.commit()
 
 
+def ingest_rk9(db: sqlite3.Connection) -> None:
+    from datetime import date
+    regulations = {reg: set(Calculator(reg).legal_species) for reg in SHOWDOWN_FORMATS}
+    rk9.ingest_rk9(db, fetch, RAW / "rk9", regulations, SpeciesNames(), since=date.fromisoformat(CHAMPIONS_START))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("source", nargs="?", choices=("all", "showdown", "limitless", "history"), default="all",
+    parser.add_argument("source", nargs="?", choices=("all", "showdown", "limitless", "rk9", "history"), default="all",
                         help="history: Scarlet/Violet VGC usage and tournaments, for longer backtests")
     parser.add_argument("--months", help="comma-separated Showdown months, e.g. 2026-08,2026-09")
     args = parser.parse_args()
@@ -293,6 +306,8 @@ def main() -> None:
         ingest_showdown(db, args.months.split(",") if args.months else None)
     if args.source in ("all", "limitless"):
         ingest_limitless(db)
+    if args.source in ("all", "rk9"):
+        ingest_rk9(db)
     if args.source == "history":
         ingest_showdown_history(db)
         ingest_limitless(db, HISTORY_LIMITLESS_FORMATS)
