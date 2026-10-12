@@ -94,7 +94,11 @@ def test_parse_round_and_keys():
     assert rk9.player_key("Jacob", "Acker", "US") in records
 
 
-def test_legal_regulation_picks_newest_fitting():
-    regs = {"M-A": {"Raichu", "Garchomp"}, "M-B": {"Raichu", "Garchomp", "Kingambit"}, "M-C": {"Kingambit"}}
+def test_legal_regulation_picks_oldest_fitting():
+    # Each regulation adds to the last, so older teams are legal in every later one too.
+    regs = {"M-A": {"Raichu", "Garchomp"}, "M-B": {"Raichu", "Garchomp", "Kingambit"},
+            "M-C": {"Raichu", "Garchomp", "Kingambit", "Venusaur"}}
+    assert rk9.legal_regulation([["Raichu", "Garchomp"]] * 10, regs) == "M-A"
     assert rk9.legal_regulation([["Raichu", "Kingambit"]] * 10, regs) == "M-B"
+    assert rk9.legal_regulation([["Venusaur", "Kingambit"]] * 10, regs) == "M-C"
     assert rk9.legal_regulation([["Pikachu"]] * 10, regs) is None

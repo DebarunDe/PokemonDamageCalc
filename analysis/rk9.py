@@ -5,8 +5,10 @@ Regionals, Internationals and Worlds run on RK9, not Limitless. For each
 finished event in RK9's event list, this finds the VGC roster (the one with
 public team lists), reads every Masters team list, and takes each player's
 final win-loss-tie record from the last round they appear in on the pairings
-pages. The regulation is the newest one in which nearly every team is legal,
-so no dates need maintaining.
+pages. The regulation is the oldest one in which nearly every team is legal:
+each regulation's legal list contains the previous one's, so an event fits
+its own regulation and every later one, but not the ones before it (M-C
+Regionals are only 12-27% legal under M-B). No dates need maintaining.
 
 Stored as tournaments.id = "rk9:<roster code>", organizer = "rk9", players are
 keyed "First Last [CC]". Only Masters is stored (Juniors and Seniors are a
@@ -125,8 +127,9 @@ def parse_round(page: str) -> dict[str, tuple[int, int, int]]:
 
 
 def legal_regulation(teams: list[list[str]], regulations: dict[str, set[str]]) -> str | None:
-    """Newest regulation (in the given order) in which nearly every team is fully legal."""
-    for reg, legal in reversed(list(regulations.items())):
+    """Oldest regulation (in the given order) in which nearly every team is fully legal.
+    Later regulations only add Pokémon, so the oldest fit is the event's own."""
+    for reg, legal in regulations.items():
         ok = sum(all(p in legal for p in team) for team in teams)
         if teams and ok / len(teams) >= MIN_LEGAL_SHARE:
             return reg
