@@ -87,8 +87,10 @@ All three take `--regulation` (`M-A`, `M-B`, `M-C`; default the current one) whe
 - **`ingest.py`** fills `analysis/data/meta.sqlite` (not committed) with Showdown monthly stats for each
   Champions VGC regulation (best-of-1 and best-of-3 ladders, all ratings and 1760+): usage, moves,
   items, abilities, Stat Point spreads, teammates and checks/counters. It also stores Limitless
-  tournaments with 8+ players, with every published team and its win-loss record. Raw downloads are
-  cached under `analysis/data/raw`.
+  tournaments with 8+ players, with every published team and its win-loss record. Official events
+  (Regionals, Internationals, Worlds) come from RK9 Labs via `rk9.py`: every Masters team list, final
+  standing and match record, found automatically and assigned to the regulation their teams are legal
+  in (`python analysis/ingest.py rk9`). Raw downloads are cached under `analysis/data/raw`.
 - **`signals.py`** scores each Pokémon on tournament win rate (shrunk toward the field average), top-cut
   conversion (actual vs expected top-cut appearances, shrunk toward 1) and ladder lift (1760+ usage vs
   all-rating usage). The undervalued score is performance minus what usage alone predicts. It also
