@@ -1,0 +1,57 @@
+# Mega Delphox / Mega Dragonite (Pokémon Champions VGC, Regulation M-C)
+# One Mega per game: Delphox by default, Dragonite against Dragons, rain and Fairies.
+# SPs = Stat Points (max 32 per stat, 66 total).
+
+Delphox @ Delphoxite
+Ability: Blaze
+SPs: 2 HP / 32 SpA / 32 Spe
+Timid Nature
+- Heat Wave
+- Psychic
+- Nasty Plot
+- Protect
+
+Dragonite @ Dragoninite
+Ability: Multiscale
+SPs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Dragon Pulse
+- Heat Wave
+- Tailwind
+- Protect
+
+Sinistcha @ Colbur Berry
+Ability: Hospitality
+SPs: 32 HP / 32 Def / 2 SpA
+Bold Nature
+- Matcha Gotcha
+- Rage Powder
+- Trick Room
+- Protect
+
+Incineroar @ Sitrus Berry
+Ability: Intimidate
+SPs: 32 HP / 14 Def / 20 SpD
+Careful Nature
+- Fake Out
+- Flare Blitz
+- Throat Chop
+- Parting Shot
+
+Kingambit @ Chople Berry
+Ability: Defiant
+SPs: 32 HP / 32 Atk / 2 SpD
+Adamant Nature
+- Kowtow Cleave
+- Sucker Punch
+- Iron Head
+- Protect
+
+Sylveon @ Fairy Feather
+Ability: Pixilate
+SPs: 32 HP / 32 SpA / 2 SpD
+Modest Nature
+- Hyper Voice
+- Hyper Beam
+- Quick Attack
+- Protect
