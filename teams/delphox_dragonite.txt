@@ -1,6 +1,7 @@
 # Mega Delphox / Mega Dragonite (Pokémon Champions VGC, Regulation M-C)
 # One Mega per game: Delphox by default, Dragonite against Dragons, rain and Fairies.
 # SPs = Stat Points (max 32 per stat, 66 total).
+# Sylveon's Speed SP matter: 95 Speed beats uninvested Incineroar and Kingambit (80/70); 0 Speed ties Incineroar.
 
 Delphox @ Delphoxite
 Ability: Blaze
@@ -49,7 +50,7 @@ Adamant Nature
 
 Sylveon @ Fairy Feather
 Ability: Pixilate
-SPs: 32 HP / 32 SpA / 2 SpD
+SPs: 9 HP / 22 Def / 20 SpA / 15 Spe
 Modest Nature
 - Hyper Voice
 - Hyper Beam
