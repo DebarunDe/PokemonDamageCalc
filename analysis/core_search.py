@@ -13,6 +13,7 @@ plays the same opponents with the same random seeds, so differences between core
 Usage:
     python analysis/core_search.py                       # ~2 hours on 4 cores
     python analysis/core_search.py --candidates 30 --screen 20 --final 200
+    python analysis/core_search.py --include Metagross-Mega Annihilape    # add Pokemon outside the top N
 
 Results go to analysis/output/cores_<size>.csv (not committed).
 """
@@ -123,11 +124,13 @@ def main(argv=None):
     p.add_argument("--final", type=int, default=300, help="opponent teams for the full test")
     p.add_argument("--keep", type=int, nargs=3, default=(60, 40, 30), help="cores re-tested in full per size")
     p.add_argument("--extend", type=int, nargs=2, default=(20, 15), help="pairs / trios extended to the next size")
+    p.add_argument("--include", nargs="*", default=[], help="extra candidates, e.g. Metagross-Mega")
     p.add_argument("--workers", type=int, default=4)
     args = p.parse_args(argv)
 
     import doubles_sim as sim
     names = candidates(args.candidates)
+    names += [n for n in args.include if n not in names and sim.real_spec(n) is not None]
     teams = [(pool, t) for pool, t in sim.opponent_teams(args.final)]
     print(f"{len(names)} candidates: {', '.join(names)}\n{len(teams)} opponent teams", flush=True)
     with mp.get_context("spawn").Pool(args.workers, initializer=_init, initargs=(teams,)) as pool:
