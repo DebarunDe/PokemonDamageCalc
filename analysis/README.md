@@ -170,3 +170,33 @@ usage model, and shows the backtests.
 A new regulation needs three things first: its Showdown commit and mod in `js/package.json`
 (`config.regulations`, then `npm run build`), its Showdown format id in `ingest.py`
 (`SHOWDOWN_FORMATS`), and its backtest snapshots in `model.py`.
+
+# Doubles battle simulator
+
+`doubles_sim.py` plays doubles battles turn by turn, with @smogon/calc damage, random rolls, accuracy and
+critical hits, to test how Pokémon do *together* rather than one-on-one.
+
+```bash
+python analysis/doubles_sim.py battle "Metagross-Mega,Arcanine-Hisui" "Incineroar,Gholdengo"   # one logged battle
+python analysis/doubles_sim.py core "Rillaboom,Metagross-Mega,Arcanine-Hisui" --teams 400      # win rate vs real teams
+python analysis/core_search.py                                                                 # best 2-, 3-, 4-cores
+```
+
+- **Sets:** each Pokémon's most common complete tournament set (item, ability, nature, moves) from
+  `data/meta.sqlite`, with its most common ladder spread for that nature.
+- **Opponents:** real teams, every official Regional top 32 plus a sample of recent online top 8s. Against a core of
+  *n*, the opponent brings *n* of its six at random. Each battle is played twice with fixed seeds, so every core
+  meets the same opponents and the same dice.
+- **AI:** the same heuristic for both sides. It takes KOs and focus fires, Protects when about to be KO'd, sets up
+  when it's safe (counting its partner's Fake Out or redirection), Fake Outs the biggest threat on its first turn,
+  and sets Tailwind or Trick Room when slower. It doesn't predict, switch (other than Parting Shot) or Encore.
+- **Mechanics:** speed order with priority, Tailwind and Trick Room; Fake Out and its immunities (Inner Focus,
+  Ghost, Armor Tail, Psychic Terrain); Protect (a repeat works 1 time in 3), Wide Guard and Quick Guard; Follow Me,
+  Rage Powder, Helping Hand and screens; Intimidate, weather and terrain on entry; a Mega's pre-Mega ability on entry
+  (Metagross's Clear Body blocks Intimidate); setup moves, sleep, burn and paralysis; Focus Sash, Sitrus Berry,
+  Leftovers, Life Orb, recoil and drain; Sucker Punch, Rage Fist, Last Respects, Electro Shot and Steel Roller;
+  spread moves (Earthquake also hits the ally) and replacements from the back.
+
+`core_search.py` screens every pair of the most used Pokémon (at most one Mega per core) on a few teams, plays the
+best again on many more, then extends the best pairs to trios and the best trios to quads the same way. The best
+pair of a trio or quad leads. Results go to `output/cores_<size>.csv`.
