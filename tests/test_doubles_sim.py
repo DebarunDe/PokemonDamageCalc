@@ -154,3 +154,13 @@ def test_growth_doubles_in_sun_and_solar_beam_needs_it(garchomp):
     assert v.boosts["spa"] == 2 and v.boosts["atk"] == 2
     battle.use(v, "Solar Beam", [g], new_turn())
     assert g.hp < 100
+
+
+def test_sleep_powder_misses_a_quarter_of_the_time(garchomp):
+    venusaur = spec("Venusaur", ["Sleep Powder"], ability="Chlorophyll")
+    slept = 0
+    for seed in range(200):
+        battle = sim.Battle([venusaur], [garchomp], random.Random(seed))
+        battle.use(battle.sides[0][0], "Sleep Powder", [battle.sides[1][0]], new_turn())
+        slept += battle.sides[1][0].status == "slp"
+    assert 125 < slept < 175

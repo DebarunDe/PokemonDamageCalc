@@ -16,7 +16,8 @@ Mechanics covered:
     Focus Sash, Sitrus Berry, Leftovers, Life Orb, Choice Scarf, recoil, drain, Knock Off
     Sucker Punch, Rage Fist, Last Respects, Eruption / Water Spout, Electro Shot, Steel Roller, Grassy Glide,
     spread moves (and Earthquake hitting the ally), replacements from the back
-    Choice item locking; Hurricane / Thunder / Blizzard accuracy in weather; Solar Beam and Growth in sun
+    Choice item locking; Hurricane / Thunder / Blizzard accuracy in weather; Solar Beam and Growth in sun;
+    accuracy of status moves (Sleep Powder 75%), Wide Lens, Ancient Power's stat boost
 Not covered: voluntary switching (other than Parting Shot), Encore, Substitute,
 abilities beyond those above and the ones the calc applies to damage.
 
@@ -78,6 +79,7 @@ TARGET_DROP = {"Icy Wind": {"spe": -1}, "Electroweb": {"spe": -1}, "Rock Tomb": 
                "Thunderous Kick": {"def": -1}, "Low Sweep": {"spe": -1}, "Mud Shot": {"spe": -1}}
 SELF_BOOST_ON_HIT = {"Flame Charge": {"spe": 1}, "Power-Up Punch": {"atk": 1}, "Trailblaze": {"spe": 1},
                      "Aqua Step": {"spe": 1}, "Rapid Spin": {"spe": 1}, "Torch Song": {"spa": 1}}
+ALL_STATS_CHANCE = {"Ancient Power", "Silver Wind", "Ominous Wind"}  # 10% chance to raise every stat
 STATUS_CHANCE = {"Scald": ("brn", 0.3), "Matcha Gotcha": ("brn", 0.2), "Sacred Fire": ("brn", 0.5),
                  "Lava Plume": ("brn", 0.3), "Nuzzle": ("par", 1.0), "Zap Cannon": ("par", 1.0),
                  "Body Slam": ("par", 0.3),
@@ -477,7 +479,7 @@ class Battle:
                 options = [f for f in foes if not f.status and "Grass" not in f.s.types and f.item != "Safety Goggles"
                            and f.ability not in ("Overcoat", "Good as Gold", "Insomnia", "Vital Spirit")]
                 if options:
-                    targets, value = [max(options, key=lambda f: self.threat(f, m))], 1.05
+                    targets, value = [max(options, key=lambda f: self.threat(f, m))], 1.4 * accuracy(mv)
             elif mv == "Will-O-Wisp":
                 options = [f for f in foes if not f.status and "Fire" not in f.s.types and f.ability != "Good as Gold"
                            and any(move_info(x)["category"] == "Physical" for x in f.s.moves)]
@@ -645,7 +647,8 @@ class Battle:
                 target_action = next((a for a in turn["order"] if a[0] is t), None)
                 if id(t) in turn["moved"] or not target_action or move_info(target_action[1])["category"] == "Status":
                     continue
-            if m.ability != "No Guard" and self.rng.random() > accuracy(mv, self.weather):
+            hit_chance = accuracy(mv, self.weather) * (1.1 if m.item == "Wide Lens" else 1.0)
+            if m.ability != "No Guard" and self.rng.random() > hit_chance:
                 self.log(f"  {m.name} {mv} missed {t.name}")
                 continue
             lo, hi = self.damage_range(m, t, mv, helping_hand=id(m) in turn["helping"])
@@ -691,6 +694,9 @@ class Battle:
                 m.hp -= 10
             for stat, n in {**SELF_DROP.get(mv, {}), **SELF_BOOST_ON_HIT.get(mv, {})}.items():
                 m.boost(stat, n)
+            if mv in ALL_STATS_CHANCE and self.rng.random() < 0.1:
+                for stat in ("atk", "def", "spa", "spd", "spe"):
+                    m.boost(stat, 1)
             if mv == "Steel Roller":
                 self.terrain, self.terrain_turns = None, 0
             if m.hp <= 0:
@@ -733,12 +739,15 @@ class Battle:
                 return
             if m.ability == "Prankster" and "Dark" in t.s.types:
                 return
+            if self.rng.random() > accuracy(mv, self.weather) * (1.1 if m.item == "Wide Lens" else 1.0):
+                self.log(f"  {m.name} {mv} missed {t.name}")
+                return
             if mv in SLEEP_MOVES and not t.status:
                 t.status, t.sleep = "slp", 3
                 self.log(f"  {m.name} {mv} -> {t.name} falls asleep")
-            elif mv == "Will-O-Wisp" and not t.status and self.rng.random() < 0.85:
+            elif mv == "Will-O-Wisp" and not t.status:
                 t.status = "brn"
-            elif mv == "Thunder Wave" and not t.status and self.rng.random() < 0.9:
+            elif mv == "Thunder Wave" and not t.status:
                 t.status = "par"
             elif mv == "Taunt":
                 t.taunt = 3
