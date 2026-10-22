@@ -16,7 +16,8 @@ Mechanics covered:
     Focus Sash, Sitrus Berry, Leftovers, Life Orb, Choice Scarf, recoil, drain, Knock Off
     Sucker Punch, Rage Fist, Last Respects, Eruption / Water Spout, Electro Shot, Steel Roller, Grassy Glide,
     spread moves (and Earthquake hitting the ally), replacements from the back
-Not covered: voluntary switching (other than Parting Shot), choice locking, Encore, Substitute,
+    Choice item locking; Hurricane / Thunder / Blizzard accuracy in weather; Solar Beam and Growth in sun
+Not covered: voluntary switching (other than Parting Shot), Encore, Substitute,
 abilities beyond those above and the ones the calc applies to damage.
 
 Sets come from real tournament teams (analysis/data/meta.sqlite): each Pokemon's most common complete
@@ -90,7 +91,7 @@ HEAL = {"Recover", "Roost", "Slack Off", "Soft-Boiled", "Moonlight", "Morning Su
         "Shore Up", "Milk Drink"}
 SLEEP_MOVES = {"Spore", "Sleep Powder", "Hypnosis"}
 # Moves the AI never picks: charge or recharge turns, or conditions the simulator doesn't model.
-NO_SELECT = {"Solar Beam", "Solar Blade", "Hyper Beam", "Giga Impact", "Focus Punch", "Dream Eater", "Last Resort",
+NO_SELECT = {"Hyper Beam", "Giga Impact", "Focus Punch", "Dream Eater", "Last Resort",
              "Future Sight", "Doom Desire", "Belch", "Meteor Beam", "Sky Attack", "Bounce", "Fly", "Dig", "Dive",
              "Phantom Force", "Shadow Force"}
 INTIMIDATE_IMMUNE = {"Clear Body", "Hyper Cutter", "White Smoke", "Full Metal Body", "Inner Focus", "Oblivious",
@@ -118,7 +119,16 @@ def move_info(name: str) -> dict:
     return _moves[name]
 
 
-def accuracy(name: str) -> float:
+# Moves that only work in sun (they skip the charge turn there).
+SUN_ONLY = {"Solar Beam", "Solar Blade"}
+CHOICE_ITEMS = {"Choice Scarf", "Choice Band", "Choice Specs"}
+
+
+def accuracy(name: str, weather: str | None = None) -> float:
+    if name in ("Hurricane", "Thunder") and weather in ("Rain", "Sun"):
+        return 1.0 if weather == "Rain" else 0.5
+    if name == "Blizzard" and weather == "Snow":
+        return 1.0
     acc = move_info(name)["accuracy"]
     return 1.0 if acc is True else acc / 100
 
@@ -221,6 +231,7 @@ class Mon:
         self.taunt = 0
         self.hits_taken = 0
         self.charging = None
+        self.locked = None  # move a Choice item locks it into
 
     @property
     def name(self):
@@ -280,7 +291,7 @@ class Battle:
 
     # ---- entry
     def enter(self, m):
-        m.turns_active = 0
+        m.turns_active, m.locked = 0, None
         weather = WEATHER_ABILITIES.get(m.ability)
         if weather and not (self.weather == weather and self.weather_turns > 0):
             self.weather, self.weather_turns = weather, 5
@@ -365,10 +376,10 @@ class Battle:
         """Expected % damage of m's best attack into `to`."""
         best = 0.0
         for mv in m.s.moves:
-            if move_info(mv)["category"] == "Status" or mv in NO_SELECT:
+            if move_info(mv)["category"] == "Status" or mv in NO_SELECT or (mv in SUN_ONLY and self.weather != "Sun"):
                 continue
             lo, hi = self.damage_range(m, to, mv)
-            best = max(best, (lo + hi) / 2 * accuracy(mv))
+            best = max(best, (lo + hi) / 2 * accuracy(mv, self.weather))
         return best
 
     @staticmethod
@@ -394,9 +405,9 @@ class Battle:
                 continue
             if mv in ("Fake Out", "First Impression") and not first:
                 continue
-            if mv == "Steel Roller" and not self.terrain:
+            if (mv == "Steel Roller" and not self.terrain) or (mv in SUN_ONLY and self.weather != "Sun"):
                 continue
-            acc = accuracy(mv)
+            acc = accuracy(mv, self.weather)
             for targets in ([foes] if info["spread"] else [[f] for f in foes]):
                 value = 0.0
                 for t in targets:
@@ -512,6 +523,8 @@ class Battle:
             incoming *= 0.35
         options = sorted(list(self.attack_options(m, foes, ally, planned)) +
                          list(self.status_options(m, foes, ally, incoming)), key=lambda o: -o[0])
+        if m.locked and m.item in CHOICE_ITEMS:
+            options = [o for o in options if o[1] == m.locked] or [(0.0, m.locked, foes[:1])]
         if not options:
             return "Struggle", []
         # Mostly the best option; now and then a close second, so the AI isn't fully predictable.
@@ -575,6 +588,8 @@ class Battle:
     def use(self, m, mv, targets, turn):
         info = move_info(mv)
         foes, ally = self.foes(m), self.ally(m)
+        if m.item in CHOICE_ITEMS:
+            m.locked = mv
         if mv in PROTECTS:
             ok = not m.last_protect or self.rng.random() < 1 / 3
             m.protected = m.last_protect = ok
@@ -586,7 +601,7 @@ class Battle:
             return
         if mv == "Fake Out" and m.turns_active > 0:
             return
-        if mv == "Steel Roller" and not self.terrain:
+        if (mv == "Steel Roller" and not self.terrain) or (mv in SUN_ONLY and self.weather != "Sun"):
             return
         if mv == "Electro Shot":
             if self.weather != "Rain" and not m.charging:
@@ -630,7 +645,7 @@ class Battle:
                 target_action = next((a for a in turn["order"] if a[0] is t), None)
                 if id(t) in turn["moved"] or not target_action or move_info(target_action[1])["category"] == "Status":
                     continue
-            if m.ability != "No Guard" and self.rng.random() > accuracy(mv):
+            if m.ability != "No Guard" and self.rng.random() > accuracy(mv, self.weather):
                 self.log(f"  {m.name} {mv} missed {t.name}")
                 continue
             lo, hi = self.damage_range(m, t, mv, helping_hand=id(m) in turn["helping"])
@@ -687,7 +702,7 @@ class Battle:
         side = m.side
         if mv in BOOST:
             for stat, n in BOOST[mv].items():
-                m.boost(stat, n)
+                m.boost(stat, 2 * n if mv == "Growth" and self.weather == "Sun" else n)
             self.log(f"  {m.name} {mv} -> {dict(m.boosts)}")
         elif mv == "Tailwind":
             self.tailwind[side] = 4
@@ -747,7 +762,7 @@ class Battle:
         slot = next(k for k, i in enumerate(self.active[side]) if i is not None and self.sides[side][i] is m)
         new = self.bench[side].pop(0)
         self.bench[side].append(self.sides[side].index(m))
-        m.boosts, m.turns_active = Counter(), 0
+        m.boosts, m.turns_active, m.locked = Counter(), 0, None
         self.active[side][slot] = new
         self.enter(self.sides[side][new])
 

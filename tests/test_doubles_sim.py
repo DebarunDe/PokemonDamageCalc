@@ -122,3 +122,35 @@ def test_eruption_weakens_with_the_users_hp(garchomp):
     a.hp = 50.0
     half = battle.damage_range(a, b, "Eruption")
     assert half[1] == pytest.approx(full[1] / 2)
+
+
+def test_weather_changes_hurricane_accuracy():
+    assert sim.accuracy("Hurricane") == 0.7
+    assert sim.accuracy("Hurricane", "Rain") == 1.0
+    assert sim.accuracy("Hurricane", "Sun") == 0.5
+    assert sim.accuracy("Blizzard", "Snow") == 1.0
+
+
+def test_choice_scarf_locks_the_first_move(garchomp):
+    scarf = spec("Garchomp", ["Dragon Claw", "Earthquake"], ability="Rough Skin", item="Choice Scarf", nature="Jolly",
+                 sp={"atk": 32, "spe": 32})
+    target = spec("Incineroar", ["Flare Blitz"], ability="Intimidate")
+    battle = sim.Battle([scarf], [target], random.Random(0))
+    a = battle.sides[0][0]
+    battle.use(a, "Dragon Claw", [battle.sides[1][0]], new_turn())
+    assert a.locked == "Dragon Claw"
+    for _ in range(5):
+        assert battle.choose(a, {})[0] == "Dragon Claw"  # Earthquake would hit harder, but it's locked in
+
+
+def test_growth_doubles_in_sun_and_solar_beam_needs_it(garchomp):
+    venusaur = spec("Venusaur", ["Growth", "Solar Beam"], ability="Chlorophyll", nature="Modest", sp={"spa": 32})
+    battle = sim.Battle([venusaur], [garchomp], random.Random(0))
+    v, g = battle.sides[0][0], battle.sides[1][0]
+    battle.use(v, "Solar Beam", [g], new_turn())
+    assert g.hp == 100  # no charge turn modelled: it just fails outside sun
+    battle.weather = "Sun"
+    battle.use(v, "Growth", [], new_turn())
+    assert v.boosts["spa"] == 2 and v.boosts["atk"] == 2
+    battle.use(v, "Solar Beam", [g], new_turn())
+    assert g.hp < 100
