@@ -59,7 +59,8 @@ def test_protect_blocks_and_repeats_can_fail(garchomp):
 
 def test_intimidate_on_entry_and_clear_body_before_mega(garchomp):
     incineroar = spec("Incineroar", ["Flare Blitz"], ability="Intimidate")
-    metagross = spec("Metagross-Mega", ["Iron Head"], ability="Tough Claws", item="Metagrossite", pre_ability="Clear Body")
+    metagross = spec("Metagross-Mega", ["Iron Head"], ability="Tough Claws", item="Metagrossite",
+                     pre_ability="Clear Body")
     battle = sim.Battle([garchomp, metagross], [incineroar], random.Random(0))
     battle.enter(battle.sides[1][0])
     assert battle.sides[0][0].boosts["atk"] == -1
@@ -111,3 +112,13 @@ def test_battle_runs_to_a_result(garchomp):
         battle = sim.Battle(team_a, team_b, random.Random(seed), log=True)
         assert battle.run() in (0.0, 0.5, 1.0)
         assert battle.lines and battle.turn <= battle.max_turns
+
+
+def test_eruption_weakens_with_the_users_hp(garchomp):
+    torkoal = spec("Torkoal", ["Eruption"], ability="Drought", nature="Quiet", sp={"hp": 32, "spa": 32})
+    battle = sim.Battle([torkoal], [garchomp], random.Random(0))
+    a, b = battle.sides[0][0], battle.sides[1][0]
+    full = battle.damage_range(a, b, "Eruption")
+    a.hp = 50.0
+    half = battle.damage_range(a, b, "Eruption")
+    assert half[1] == pytest.approx(full[1] / 2)

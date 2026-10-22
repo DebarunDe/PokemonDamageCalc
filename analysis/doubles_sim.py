@@ -14,8 +14,8 @@ Mechanics covered:
     a Mega's pre-Mega ability blocking Intimidate on entry (e.g. Metagross's Clear Body)
     setup moves, Parting Shot, Haze, Taunt, sleep, burn, paralysis, healing moves
     Focus Sash, Sitrus Berry, Leftovers, Life Orb, Choice Scarf, recoil, drain, Knock Off
-    Sucker Punch, Rage Fist, Last Respects, Electro Shot, Steel Roller, Grassy Glide, spread moves
-    (and Earthquake hitting the ally), replacements from the back
+    Sucker Punch, Rage Fist, Last Respects, Eruption / Water Spout, Electro Shot, Steel Roller, Grassy Glide,
+    spread moves (and Earthquake hitting the ally), replacements from the back
 Not covered: voluntary switching (other than Parting Shot), choice locking, Encore, Substitute,
 abilities beyond those above and the ones the calc applies to damage.
 
@@ -78,11 +78,14 @@ TARGET_DROP = {"Icy Wind": {"spe": -1}, "Electroweb": {"spe": -1}, "Rock Tomb": 
 SELF_BOOST_ON_HIT = {"Flame Charge": {"spe": 1}, "Power-Up Punch": {"atk": 1}, "Trailblaze": {"spe": 1},
                      "Aqua Step": {"spe": 1}, "Rapid Spin": {"spe": 1}, "Torch Song": {"spa": 1}}
 STATUS_CHANCE = {"Scald": ("brn", 0.3), "Matcha Gotcha": ("brn", 0.2), "Sacred Fire": ("brn", 0.5),
-                 "Lava Plume": ("brn", 0.3), "Nuzzle": ("par", 1.0), "Zap Cannon": ("par", 1.0), "Body Slam": ("par", 0.3),
+                 "Lava Plume": ("brn", 0.3), "Nuzzle": ("par", 1.0), "Zap Cannon": ("par", 1.0),
+                 "Body Slam": ("par", 0.3),
                  "Discharge": ("par", 0.3), "Thunder": ("par", 0.3), "Thunderbolt": ("par", 0.1),
                  "Fire Blast": ("brn", 0.1), "Flamethrower": ("brn", 0.1), "Heat Wave": ("brn", 0.1)}
 FLINCH_CHANCE = {"Rock Slide": 0.3, "Air Slash": 0.3, "Iron Head": 0.3, "Zen Headbutt": 0.2, "Dark Pulse": 0.2,
                  "Bite": 0.3, "Headbutt": 0.3, "Waterfall": 0.2, "Icicle Crash": 0.3}
+# Power falls with the user's HP (the calc assumes full HP).
+HP_SCALED = {"Eruption", "Water Spout", "Dragon Energy"}
 HEAL = {"Recover", "Roost", "Slack Off", "Soft-Boiled", "Moonlight", "Morning Sun", "Synthesis", "Strength Sap",
         "Shore Up", "Milk Drink"}
 SLEEP_MOVES = {"Spore", "Sleep Powder", "Hypnosis"}
@@ -319,7 +322,8 @@ class Battle:
                                boosts={k: v for k, v in att.boosts.items() if v},
                                status="brn" if att.status == "brn" else "")
                 d = PokemonSet(dfn.name, ability=dfn.ability, item=dfn.item, nature=dfn.s.nature, sp=dfn.s.sp,
-                               boosts={k: v for k, v in dfn.boosts.items() if v}, cur_hp_percent=100 if multiscale else 99)
+                               boosts={k: v for k, v in dfn.boosts.items() if v},
+                               cur_hp_percent=100 if multiscale else 99)
                 results = calc.calculate_many(a, d, moves, f)[2] if moves else []
                 cache[key] = {r.move: (r.min_percent, r.max_percent) for r in results}
             except CalcError:
@@ -330,6 +334,8 @@ class Battle:
             mult = min(7, 1 + att.hits_taken)
         elif move == "Last Respects":
             mult = 1 + self.fainted_count[att.side]
+        elif move in HP_SCALED:
+            mult = max(att.hp, 1.0) / 100
         return lo * mult, hi * mult
 
     def speed(self, m):
@@ -529,7 +535,8 @@ class Battle:
         actions, planned = {}, {}
         for side in (0, 1):
             def decides_first(x):  # supports commit first, so partners can plan around them
-                support = (x.turns_active == 0 and "Fake Out" in x.s.moves) or {"Follow Me", "Rage Powder"} & set(x.s.moves)
+                redirects = {"Follow Me", "Rage Powder"} & set(x.s.moves)
+                support = (x.turns_active == 0 and "Fake Out" in x.s.moves) or redirects
                 return 0 if support else 1, -self.speed(x)
             for m in sorted(self.act(side), key=decides_first):
                 if m.charging:
@@ -808,7 +815,8 @@ def opponent_teams(n: int, seed: int = 7) -> list[tuple[str, list[str]]]:
     def teams(where):
         out = defaultdict(list)
         for t, p, mon in db().execute(
-                "SELECT m.tournament, m.player, m.pokemon FROM team_members m JOIN tournaments t ON t.id = m.tournament "
+                "SELECT m.tournament, m.player, m.pokemon FROM team_members m "
+                "JOIN tournaments t ON t.id = m.tournament "
                 f"WHERE t.regulation = ? AND {where} ORDER BY m.tournament, m.player, m.slot", (REGULATION,)):
             out[(t, p)].append(mon)
         return list(out.values())
