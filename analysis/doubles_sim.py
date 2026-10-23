@@ -195,7 +195,10 @@ def real_spec(name: str) -> Spec | None:
             return c[0][0] if c else default
         item, pre, nature = top(r[0] for r in rows), top(r[1] for r in rows), top((r[2] for r in rows), "Hardy")
         moves = top((tuple(sorted(json.loads(r[3]))) for r in rows if r[3]), ())
-    legal = calc.species(name)["abilities"]
+    try:
+        legal = calc.species(name)["abilities"]
+    except CalcError:  # a name the calc doesn't know, e.g. one entered in another language
+        return None
     ability = pre if (pre in legal or not legal) else legal[0]
     sp = None
     for (value,) in db().execute(

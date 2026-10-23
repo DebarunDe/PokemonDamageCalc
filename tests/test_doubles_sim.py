@@ -164,3 +164,9 @@ def test_sleep_powder_misses_a_quarter_of_the_time(garchomp):
         battle.use(battle.sides[0][0], "Sleep Powder", [battle.sides[1][0]], new_turn())
         slept += battle.sides[1][0].status == "slp"
     assert 125 < slept < 175
+
+
+def test_unknown_species_gets_no_set():
+    if not sim.DB.exists():
+        pytest.skip("needs analysis/data/meta.sqlite")
+    assert sim.real_spec("Not A Pokemon") is None
