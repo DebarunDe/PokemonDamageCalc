@@ -209,3 +209,17 @@ tournament, the two halves agree at r ≈ 0.57; reliability ≈ 0.73). The simul
 (Mega Garchomp Z, Mega Salamence, Gholdengo, Volcarona) and underrates bulky, support and late-game Pokémon
 (Grimmsnarl, Kingambit, Archaludon, Mega Charizard Y). Use it to compare sets within a core or to check specific
 interactions, not to rank cores; rank those from tournament results.
+
+# Core ranking from tournament results
+
+`core_ranking.py` ranks 2-, 3- and 4-Pokémon cores by how the teams carrying them did in M-C tournaments: wins per
+game above what the players' skill predicts, shrunk toward the average by sample size (the empirical-Bayes prior
+from `backtest.py`). Next to each score it shows how many players used the core and the biggest one's share of its
+games, and the score at official Regionals vs online events and before vs after the current meta settled.
+
+```bash
+python analysis/core_ranking.py                      # pairs, trios and fours (~30 s)
+python analysis/core_ranking.py --size 4 --top 40
+```
+
+Results go to `output/core_ranking_<size>.csv`.
