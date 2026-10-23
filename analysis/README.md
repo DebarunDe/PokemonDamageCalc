@@ -223,3 +223,35 @@ python analysis/core_ranking.py --size 4 --top 40
 ```
 
 Results go to `output/core_ranking_<size>.csv`.
+
+# Synergy model (ideas for new cores)
+
+Core ranking only scores cores people already play. `synergy.py` learns *why* Pokémon work together so it can score
+pairs that have rarely or never been played. Each Pokémon gets a role profile from its real sets and base stats
+(Fake Out, redirection, Intimidate, Tailwind, Trick Room, screens, sleep, pivoting, Wide Guard, Helping Hand,
+weather and terrain setters and users, setup, priority, spread moves, physical / special, fast / slow, bulky,
+Protect, Mega). A team's result (wins per game above its player's skill) is modelled as each member's individual
+strength plus, for every pair on the team, a learned weight for each role × role combination and a type-fit term
+(weaknesses shared, weaknesses covered), fitted by weighted ridge regression.
+
+```bash
+python analysis/synergy.py validate    # held-out pairs and later events vs an individual-only baseline (~15 min)
+python analysis/synergy.py suggest     # pairs ranked by how sure the model is of their synergy (~5 min)
+```
+
+**Validation (October 2026).** Correlation between predicted and actual results of the teams carrying each pair,
+weighted by games:
+
+| test | individual strength only | + role and type synergy |
+| --- | --- | --- |
+| held-out pairs (69 pairs with 500+ games; every team carrying them hidden while fitting) | +0.24 | **+0.45** |
+| later events (fit before 26 Sep, predict 512 pairs after) | +0.16 | **+0.37** |
+
+On held-out pairs the synergy part correlates +0.58 with what the baseline missed. Learned latent "styles"
+(recommender-style factors, `Model(latent=True)`) did not generalise to unseen pairs (+0.01), so they are off by
+default. The penalty on the role weights was tuned on the later-events split, so the held-out-pairs test is the
+independent check. The model recovers the established strong cores (Trick Room sun with Farigiraf and Mega Charizard
+Y, Archaludon + Pelipper rain, Indeedee + Farigiraf). Its role labels are coarse, though, so check a suggested pair
+with damage calcs and the simulator before building around it.
+
+Results go to `output/synergy_pairs.csv`.

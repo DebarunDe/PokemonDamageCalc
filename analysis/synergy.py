@@ -9,14 +9,15 @@ modelled as
     individual strength of each member
     + for every pair on the team: role x role synergy (e.g. Fake Out x setup, Trick Room x slow, sun x Chlorophyll)
       + type fit (weaknesses they share, weaknesses one covers for the other)
-      + a learned "style" match (latent factors, as in recommender systems)
+      + optionally a learned "style" match (latent factors, as in recommender systems; off by default because it
+        did not generalise to held-out pairs)
 
-fitted by weighted least squares (weights = games) with ridge penalties. Because synergy comes from roles and
-styles rather than a table of observed pairs, the model can score pairs it has rarely or never seen.
+fitted by weighted least squares (weights = games) with ridge penalties. Because synergy comes from roles rather
+than a table of observed pairs, the model can score pairs it has rarely or never seen.
 
 Usage:
-    python analysis/synergy.py validate      # does it predict held-out pairs and later events? (~5 min)
-    python analysis/synergy.py suggest       # under-played cores it rates highly, with what drives them
+    python analysis/synergy.py validate      # does it predict held-out pairs and later events? (~15 min)
+    python analysis/synergy.py suggest       # pairs ranked by how sure it is of their synergy
 
 Results go to analysis/output/synergy_*.csv (not committed).
 """
@@ -218,7 +219,7 @@ class Design:
 
 
 class Model:
-    def __init__(self, k=4, lam_b=30.0, lam_w=300.0, lam_v=300.0, roles=True, latent=True, seed=0):
+    def __init__(self, k=4, lam_b=30.0, lam_w=300.0, lam_v=10.0, roles=True, latent=False, seed=0):
         self.k, self.lam_b, self.lam_w, self.lam_v = k, lam_b, lam_w, lam_v
         self.use_roles, self.use_latent, self.seed = roles, latent and k > 0, seed
 
@@ -245,7 +246,7 @@ class Model:
         n = 3 + S + P + (S * self.k if self.use_latent else 0)
         x0 = np.zeros(n)
         if self.use_latent:
-            x0[3 + S + P:] = np.random.default_rng(self.seed).normal(0, 0.01, S * self.k)
+            x0[3 + S + P:] = np.random.default_rng(self.seed).normal(0, 0.1, S * self.k)
         x0[0] = np.average(d.y, weights=d.g)
         wsum = d.g.sum()
 
@@ -311,16 +312,27 @@ def pair_stats(teams, roster, min_games):
     return {p: (a[0] / a[1], a[1], a[2]) for p, a in agg.items() if a[1] >= min_games}
 
 
-def held_out_pairs(roster, teams, configs, folds=5, min_games=500, seed=0):
+def held_out_pairs(roster, teams, configs, folds=8, min_games=500, budget=0.15, seed=0):
     """Hide a fold of well-played pairs (drop every team carrying any of them), fit, and predict how the teams
-    carrying each hidden pair did. Returns, per config, (predicted, actual, games) over all hidden pairs."""
+    carrying each hidden pair did. Each fold hides at most `budget` of all teams, so the fit still sees most of the
+    data; pairs on more teams than that on their own are never hidden. Returns, per config, (predicted, actual,
+    games) over all hidden pairs."""
     pairs = pair_stats(teams, roster, min_games)
-    keys = list(pairs)
+    keys = [p for p in pairs if len(pairs[p][2]) <= budget * len(teams)]
     random.Random(seed).shuffle(keys)
     out = {name: ([], [], []) for name in configs}
+    hidden = 0
     for f in range(folds):
-        test = set(keys[f::folds])
-        test_teams = set(k for p in test for k in pairs[p][2])
+        test, test_teams = [], set()
+        for p in keys:
+            more = test_teams | set(pairs[p][2])
+            if len(more) <= budget * len(teams):
+                test.append(p)
+                test_teams = more
+        keys = [p for p in keys if p not in test]
+        if not test:
+            break
+        hidden += len(test)
         train = [t for k, t in enumerate(teams) if k not in test_teams]
         d_train = Design(roster, train)
         d_test = {p: Design(roster, [teams[k] for k in pairs[p][2]]) for p in test}
@@ -331,7 +343,7 @@ def held_out_pairs(roster, teams, configs, folds=5, min_games=500, seed=0):
                 out[name][1].append(pairs[p][0])
                 out[name][2].append(pairs[p][1])
         print(f"  fold {f + 1}/{folds}: {len(test)} hidden pairs, trained on {len(train)} teams", flush=True)
-    return out, len(keys)
+    return out, hidden
 
 
 def later_events(roster, teams, configs, min_games=300):
@@ -382,7 +394,9 @@ CONFIGS = {
 
 # ---------------------------------------------------------------------------------------------------- suggest
 
-def suggest(roster, teams, top=25, min_teams=40, max_played=150, boots=12):
+def suggest(roster, teams, top=25, min_teams=150, max_played=150, boots=12):
+    """Pairs ranked by how sure the model is of their synergy (synergy minus its bootstrap spread), among
+    Pokemon on enough teams for their individual strength to be known and at least average on their own."""
     counts = Counter(i for idx, *_ in teams for i in idx)
     names = [n for n in roster.names if counts[roster.index[n]] >= min_teams]
     played = defaultdict(float)
@@ -400,31 +414,29 @@ def suggest(roster, teams, top=25, min_teams=40, max_played=150, boots=12):
         if "-Mega" in a and "-Mega" in b:
             continue
         i, j = sorted((roster.index[a], roster.index[b]))
-        games = played.get((i, j), 0.0)
         role, tf, style = full.pair_synergy(roster, a, b)
-        strength = full.strength(roster, a) + full.strength(roster, b)
-        boot = [sum(m.pair_synergy(roster, a, b)) + m.strength(roster, a) + m.strength(roster, b) for m in boot_models]
-        rows.append({"pair": f"{a} / {b}", "games": int(games), "predicted": 100 * (strength + role + tf + style),
-                     "synergy": 100 * (role + tf + style), "roles": 100 * role, "types": 100 * tf, "style": 100 * style,
-                     "strength": 100 * strength, "sd": 100 * float(np.std(boot)),
+        sa, sb = full.strength(roster, a), full.strength(roster, b)
+        boot = [sum(m.pair_synergy(roster, a, b)) for m in boot_models]
+        rows.append({"pair": f"{a} / {b}", "games": int(played.get((i, j), 0.0)),
+                     "predicted": 100 * (sa + sb + role + tf + style), "synergy": 100 * (role + tf + style),
+                     "synergy_sd": 100 * float(np.std(boot)), "roles": 100 * role, "types": 100 * tf,
+                     "style": 100 * style, "strength_a": 100 * sa, "strength_b": 100 * sb,
                      "why": "; ".join(f"{k} {100 * v:+.2f}" for k, v in full.top_role_terms(roster, a, b))})
     OUT.mkdir(exist_ok=True)
-    rows.sort(key=lambda r: -r["predicted"])
+    rows.sort(key=lambda r: -(r["synergy"] - r["synergy_sd"]))
     with open(OUT / "synergy_pairs.csv", "w", newline="") as f:
         out = csv.DictWriter(f, fieldnames=list(rows[0]))
         out.writeheader()
         out.writerows(rows)
-    fresh = [r for r in rows if r["games"] < max_played and r["predicted"] - r["sd"] > 0]
-    print(f"\nUnder-played pairs (< {max_played} games) the model rates highly "
-          "(predicted wins above skill per game, %):")
-    print(f"  {'pred':>6} {'+/-':>5} {'synergy':>7} {'games':>5}  pair  |  top role terms")
-    for r in fresh[:top]:
-        print(f"  {r['predicted']:+6.2f} {r['sd']:5.2f} {r['synergy']:+7.2f} {r['games']:5d}  {r['pair']}"
-              f"  |  {r['why']}")
-    print("\nStrongest synergies overall (any sample size):")
-    for r in sorted(rows, key=lambda r: -r["synergy"])[:12]:
-        print(f"  synergy {r['synergy']:+5.2f} (roles {r['roles']:+.2f}, types {r['types']:+.2f}, "
-              f"style {r['style']:+.2f}), games {r['games']:5d}  {r['pair']}")
+    solid = [r for r in rows if min(r["strength_a"], r["strength_b"]) >= 0]
+    for label, part in ((f"Under-played pairs (< {max_played} games)", [r for r in solid if r["games"] < max_played]),
+                        ("Well-played pairs, for comparison", [r for r in solid if r["games"] >= max_played])):
+        print(f"\n{label} with the surest synergy (wins above skill per game, %), "
+              f"both Pokemon on {min_teams}+ teams and at least average alone:")
+        print(f"  {'synergy':>7} {'+/-':>5} {'pred':>6} {'games':>5}  pair  |  top role terms")
+        for r in part[:top]:
+            print(f"  {r['synergy']:+7.2f} {r['synergy_sd']:5.2f} {r['predicted']:+6.2f} {r['games']:5d}  {r['pair']}"
+                  f"  |  {r['why']}")
     w = full._unpack(full.x, full.d)[2]
     order = np.argsort(-np.abs(w))[:15]
     print("\nRole combinations the model learned matter most (+ helps, - hurts), per pair on a team:")
