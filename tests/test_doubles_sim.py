@@ -170,3 +170,12 @@ def test_unknown_species_gets_no_set():
     if not sim.DB.exists():
         pytest.skip("needs analysis/data/meta.sqlite")
     assert sim.real_spec("Not A Pokemon") is None
+
+
+def test_bring_keeps_at_most_one_mega(garchomp):
+    megas = [spec(n, ["Protect"]) for n in ("Charizard-Mega-Y", "Metagross-Mega", "Delphox-Mega")]
+    others = [garchomp, spec("Incineroar", ["Fake Out"]), spec("Rillaboom", ["Fake Out"])]
+    for seed in range(20):
+        chosen = sim.bring(megas + others, 4, random.Random(seed), fixed=[megas[0]])
+        assert chosen[0] is megas[0] and len(chosen) == 4
+        assert sum("-Mega" in s.name for s in chosen) == 1

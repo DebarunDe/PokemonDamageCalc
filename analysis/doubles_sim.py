@@ -853,12 +853,27 @@ def opponent_teams(n: int, seed: int = 7) -> list[tuple[str, list[str]]]:
     return [("official", t) for t in official] + [("online", t) for t in online]
 
 
+def bring(team: list[Spec], n: int, rng: random.Random, fixed=()) -> list[Spec]:
+    """n Pokemon from a team: `fixed` first, the rest at random, with at most one Mega (only one can Mega Evolve)."""
+    chosen = list(fixed)
+    megas = sum("-Mega" in s.name for s in chosen)
+    for s in rng.sample([s for s in team if s not in chosen], len(team) - len(chosen)):
+        if len(chosen) == n:
+            break
+        if "-Mega" in s.name:
+            if megas:
+                continue
+            megas += 1
+        chosen.append(s)
+    return chosen
+
+
 def play_core(core: list[Spec], team: list[Spec], seed: int, reps: int = 2) -> list[float]:
     """Results of `reps` battles: the core against as many of the team's Pokemon, picked at random."""
     results = []
     for rep in range(reps):
         rng = random.Random(seed * 1000 + rep)
-        opp = rng.sample(team, len(core))
+        opp = bring(team, len(core), rng)
         results.append(Battle(core, opp, random.Random(rng.randrange(10**9))).run())
     return results
 
