@@ -18,6 +18,8 @@ Mechanics covered:
     spread moves (and Earthquake hitting the ally), replacements from the back
     Choice item locking; Hurricane / Thunder / Blizzard accuracy in weather; Solar Beam and Growth in sun;
     accuracy of status moves (Sleep Powder 75%), Wide Lens, Ancient Power's stat boost
+    Supreme Overlord, Unburden, Hospitality, Friend Guard, Rough Skin / Iron Barbs; White Herb, Rocky Helmet,
+    Lum Berry and type-resist berries (used up after one hit)
 Not covered: voluntary switching (other than Parting Shot), Encore, Substitute,
 abilities beyond those above and the ones the calc applies to damage.
 
@@ -107,6 +109,12 @@ TERRAIN_ABILITIES = {"Grassy Surge": "Grassy", "Psychic Surge": "Psychic", "Elec
                      "Misty Surge": "Misty", "Seed Sower": "Grassy", "Hadron Engine": "Electric"}
 SPEED_ABILITIES = {"Swift Swim": "Rain", "Chlorophyll": "Sun", "Sand Rush": "Sand", "Slush Rush": "Snow"}
 CRIT_RATE = 1 / 24
+RESIST_BERRIES = {"Chople Berry": "Fighting", "Occa Berry": "Fire", "Passho Berry": "Water", "Wacan Berry": "Electric",
+                  "Rindo Berry": "Grass", "Yache Berry": "Ice", "Kebia Berry": "Poison", "Shuca Berry": "Ground",
+                  "Coba Berry": "Flying", "Payapa Berry": "Psychic", "Tanga Berry": "Bug", "Charti Berry": "Rock",
+                  "Kasib Berry": "Ghost", "Haban Berry": "Dragon", "Colbur Berry": "Dark", "Babiri Berry": "Steel",
+                  "Roseli Berry": "Fairy", "Chilan Berry": "Normal"}
+CONTACT_PUNISH = {"Rough Skin": 1 / 8, "Iron Barbs": 1 / 8}  # share of the attacker's HP lost on contact
 
 calc = Calculator()
 _moves: dict[str, dict] = {}
@@ -237,6 +245,7 @@ class Mon:
         self.hits_taken = 0
         self.charging = None
         self.locked = None  # move a Choice item locks it into
+        self.item_lost = False  # for Unburden
 
     @property
     def name(self):
@@ -245,6 +254,10 @@ class Mon:
     @property
     def ability(self):
         return self.s.ability
+
+    def lose_item(self):
+        if self.item:
+            self.item, self.item_lost = None, True
 
     def boost(self, stat, n, by_foe=False):
         if by_foe and n < 0 and self.ability in DROP_IMMUNE:
@@ -255,6 +268,16 @@ class Mon:
                 self.boosts["atk"] = min(6, self.boosts["atk"] + 2)
             if self.ability == "Competitive":
                 self.boosts["spa"] = min(6, self.boosts["spa"] + 2)
+        if self.item == "White Herb" and any(v < 0 for v in self.boosts.values()):
+            for k in [k for k, v in self.boosts.items() if v < 0]:
+                self.boosts[k] = 0
+            self.lose_item()
+
+    def set_status(self, status, sleep=0):
+        if self.item == "Lum Berry":
+            self.lose_item()
+            return
+        self.status, self.sleep = status, sleep
 
     def grounded(self):
         return "Flying" not in self.s.types and self.ability != "Levitate"
@@ -313,13 +336,17 @@ class Battle:
                     continue
                 f.boost("atk", -1, by_foe=True)
                 self.log(f"  {m.name} Intimidates {f.name}")
+        ally = self.ally(m)
+        if m.ability == "Hospitality" and ally:
+            ally.hp = min(100.0, ally.hp + 25)
 
     # ---- damage
     def field(self, defender, helping_hand=False):
         side = defender.side
         return Field(weather=self.weather, terrain=self.terrain, reflect=self.reflect[side] > 0,
                      light_screen=self.light_screen[side] > 0, aurora_veil=self.veil[side] > 0,
-                     helping_hand=helping_hand, doubles=True)
+                     helping_hand=helping_hand, doubles=True,
+                     friend_guard=any(x.ability == "Friend Guard" for x in self.act(side) if x is not defender))
 
     def damage_range(self, att, dfn, move, helping_hand=False):
         """(min %, max %) of the defender's max HP. Spread moves already take the 0.75x doubles penalty."""
@@ -329,7 +356,7 @@ class Battle:
                tuple(sorted((k, v) for k, v in att.boosts.items() if v)), att.status,
                dfn.name, dfn.ability, dfn.item, dfn.s.nature, tuple(sorted(dfn.s.sp.items())),
                tuple(sorted((k, v) for k, v in dfn.boosts.items() if v)), multiscale,
-               f.weather, f.terrain, f.reflect, f.light_screen, f.aurora_veil, helping_hand)
+               f.weather, f.terrain, f.reflect, f.light_screen, f.aurora_veil, f.friend_guard, helping_hand)
         cache = Battle._damage_cache
         if key not in cache:
             moves = [x for x in att.s.moves if move_info(x)["category"] != "Status"]
@@ -352,6 +379,8 @@ class Battle:
             mult = 1 + self.fainted_count[att.side]
         elif move in HP_SCALED:
             mult = max(att.hp, 1.0) / 100
+        if att.ability == "Supreme Overlord":
+            mult *= 1 + 0.1 * min(5, self.fainted_count[att.side])
         return lo * mult, hi * mult
 
     def speed(self, m):
@@ -366,6 +395,8 @@ class Battle:
             spe *= 2
         if m.item == "Choice Scarf":
             spe *= 1.5
+        if m.ability == "Unburden" and m.item_lost:
+            spe *= 2
         return spe
 
     def priority(self, m, move):
@@ -633,7 +664,7 @@ class Battle:
                                                                or m.item == "Safety Goggles"))):
                 t = redirect[0]
             hit = [t]
-        dealt = 0.0
+        dealt, recoil_contact = 0.0, 0.0
         for t in hit:
             if t.fainted:
                 continue
@@ -663,17 +694,23 @@ class Battle:
             if self.rng.random() < CRIT_RATE:
                 d *= 1.5
             if t.item == "Focus Sash" and t.hp >= 100 and d >= 100:
-                d, t.item = 99.0, None
+                d = 99.0
+                t.lose_item()
             d = min(d, t.hp)
             t.hp -= d
             t.hits_taken += 1
             dealt += d * t.s.max_hp / 100
             self.log(f"  {m.name} {mv} -> {t.name} {d:.0f}% (hp {t.hp:.0f})")
+            if move_info(mv).get("contact"):
+                recoil_contact += CONTACT_PUNISH.get(t.ability, 0.0) + (1 / 6 if t.item == "Rocky Helmet" else 0.0)
+            if RESIST_BERRIES.get(t.item) == move_info(mv).get("type"):
+                t.lose_item()  # the calc halved this hit; the berry is gone now
             if t.hp <= 0:
                 self.faint(t)
                 continue
             if t.item == "Sitrus Berry" and t.hp <= 50:
-                t.hp, t.item = min(100.0, t.hp + 25), None
+                t.hp = min(100.0, t.hp + 25)
+                t.lose_item()
             if mv == "Fake Out" and t.ability != "Inner Focus":
                 t.flinched = True
             if (mv in FLINCH_CHANCE and id(t) not in turn["moved"] and t.ability != "Inner Focus"
@@ -685,9 +722,14 @@ class Battle:
                 status, chance = STATUS_CHANCE[mv]
                 immune = (status == "brn" and "Fire" in t.s.types) or (status == "par" and "Electric" in t.s.types)
                 if not immune and self.rng.random() < chance:
-                    t.status = status
+                    t.set_status(status)
             if mv == "Knock Off" and t.item and not t.item.endswith("ite") and "ite " not in t.item:
-                t.item = None
+                t.lose_item()
+        if recoil_contact:
+            m.hp -= 100 * recoil_contact
+            if m.hp <= 0:
+                self.faint(m)
+                return
         if dealt > 0:
             if mv in RECOIL and m.ability != "Rock Head":
                 m.hp -= RECOIL[mv] * dealt / m.s.max_hp * 100
@@ -705,7 +747,8 @@ class Battle:
             if m.hp <= 0:
                 self.faint(m)
             elif m.item == "Sitrus Berry" and m.hp <= 50:
-                m.hp, m.item = min(100.0, m.hp + 25), None
+                m.hp = min(100.0, m.hp + 25)
+                m.lose_item()
 
     def use_status(self, m, mv, targets, foes, ally, turn):
         side = m.side
@@ -746,12 +789,12 @@ class Battle:
                 self.log(f"  {m.name} {mv} missed {t.name}")
                 return
             if mv in SLEEP_MOVES and not t.status:
-                t.status, t.sleep = "slp", 3
+                t.set_status("slp", 3)
                 self.log(f"  {m.name} {mv} -> {t.name} falls asleep")
             elif mv == "Will-O-Wisp" and not t.status:
-                t.status = "brn"
+                t.set_status("brn")
             elif mv == "Thunder Wave" and not t.status:
-                t.status = "par"
+                t.set_status("par")
             elif mv == "Taunt":
                 t.taunt = 3
             elif mv == "Parting Shot":

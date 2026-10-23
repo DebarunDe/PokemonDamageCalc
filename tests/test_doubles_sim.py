@@ -179,3 +179,57 @@ def test_bring_keeps_at_most_one_mega(garchomp):
         chosen = sim.bring(megas + others, 4, random.Random(seed), fixed=[megas[0]])
         assert chosen[0] is megas[0] and len(chosen) == 4
         assert sum("-Mega" in s.name for s in chosen) == 1
+
+
+def test_supreme_overlord_grows_with_fainted_allies(garchomp):
+    kingambit = spec("Kingambit", ["Kowtow Cleave"], ability="Supreme Overlord", nature="Adamant", sp={"atk": 32})
+    battle = sim.Battle([kingambit], [garchomp], random.Random(0))
+    a, b = battle.sides[0][0], battle.sides[1][0]
+    base = battle.damage_range(a, b, "Kowtow Cleave")[1]
+    battle.fainted_count[0] = 2
+    assert battle.damage_range(a, b, "Kowtow Cleave")[1] == pytest.approx(base * 1.2)
+
+
+def test_white_herb_triggers_unburden(garchomp):
+    sneasler = spec("Sneasler", ["Close Combat"], ability="Unburden", item="White Herb", nature="Jolly",
+                    sp={"atk": 32, "spe": 32})
+    battle = sim.Battle([sneasler], [garchomp], random.Random(0))
+    a = battle.sides[0][0]
+    before = battle.speed(a)
+    battle.use(a, "Close Combat", [battle.sides[1][0]], new_turn())
+    assert a.boosts["def"] == 0 and a.item is None  # White Herb undid the drops and was used up
+    assert battle.speed(a) == pytest.approx(2 * before)
+
+
+def test_hospitality_heals_the_partner_on_entry(garchomp):
+    sinistcha = spec("Sinistcha", ["Matcha Gotcha"], ability="Hospitality")
+    battle = sim.Battle([garchomp, sinistcha], [garchomp], random.Random(0))
+    battle.sides[0][0].hp = 40.0
+    battle.enter(battle.sides[0][1])
+    assert battle.sides[0][0].hp == 65.0
+
+
+def test_rocky_helmet_hurts_contact_attackers():
+    incineroar = spec("Incineroar", ["Fake Out", "Flare Blitz"], ability="Intimidate")
+    helmet = spec("Indeedee-F", ["Psychic"], ability="Psychic Surge", item="Rocky Helmet")
+    battle = sim.Battle([incineroar], [helmet], random.Random(0))
+    a, h = battle.sides[0][0], battle.sides[1][0]
+    battle.use(a, "Fake Out", [h], new_turn())  # Psychic Terrain isn't up, so it connects
+    assert h.flinched
+    assert a.hp == pytest.approx(100 - 100 / 6)
+
+
+def test_resist_berry_is_used_up_and_lum_berry_cures_once():
+    kingambit = spec("Kingambit", ["Kowtow Cleave"], ability="Defiant", item="Chople Berry")
+    lucario = spec("Lucario-Mega", ["Close Combat"], nature="Adamant", sp={"atk": 32})
+    battle = sim.Battle([lucario], [kingambit], random.Random(0))
+    a, k = battle.sides[0][0], battle.sides[1][0]
+    halved = battle.damage_range(a, k, "Close Combat")
+    battle.use(a, "Close Combat", [k], new_turn())
+    assert k.item is None
+    assert battle.damage_range(a, k, "Close Combat")[0] > halved[0]
+    lum = sim.Mon(spec("Garchomp", ["Earthquake"], item="Lum Berry"), 0)
+    lum.set_status("brn")
+    assert lum.status == "" and lum.item is None
+    lum.set_status("brn")
+    assert lum.status == "brn"

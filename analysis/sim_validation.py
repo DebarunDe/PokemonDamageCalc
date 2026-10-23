@@ -82,7 +82,8 @@ def real_cores(size: int, n: int, max_teams: int, seed: int = 3):
     teams, record = defaultdict(list), {}
     for t, p, mon, w, l in db.execute(
             "SELECT m.tournament, m.player, m.pokemon, m.wins, m.losses FROM team_members m "
-            "JOIN tournaments t ON t.id = m.tournament WHERE t.regulation = ? ORDER BY m.slot", (doubles_sim.REGULATION,)):
+            "JOIN tournaments t ON t.id = m.tournament WHERE t.regulation = ? ORDER BY m.slot",
+            (doubles_sim.REGULATION,)):
         teams[(t, p)].append(mon)
         record[(t, p)] = (w or 0, l or 0)
     agg = defaultdict(lambda: [0, 0, 0.0, []])
@@ -156,7 +157,8 @@ def main(argv=None):
         out = csv.DictWriter(f, fieldnames=list(rows[0]))
         out.writeheader()
         out.writerows({k: round(v, 2) if isinstance(v, float) else v for k, v in r.items()} for r in rows)
-    print(f"\ncorrelation r = {np.corrcoef(x, y)[0, 1]:+.2f}   weighted by games {weighted_corr(x, y, w):+.2f}   "
+    r_all, r_w = np.corrcoef(x, y)[0, 1], weighted_corr(x, y, w)
+    print(f"\ncorrelation r = {r_all:+.2f}   weighted by games {r_w:+.2f}   "
           f"rank {np.corrcoef(rank(x), rank(y))[0, 1]:+.2f}")
     print(f"reliability: real {rel_y:.2f}, simulated {rel_x:.2f} -> best attainable r ~ {np.sqrt(rel_x * rel_y):.2f}")
     by_res = sorted(rows, key=lambda r: r["residual"])
