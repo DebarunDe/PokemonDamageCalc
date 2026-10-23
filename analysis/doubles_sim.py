@@ -38,6 +38,7 @@ Pokemon as the core, picked at random from its six, and every battle is played t
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import random
 import sqlite3
@@ -129,6 +130,7 @@ def move_info(name: str) -> dict:
     return _moves[name]
 
 
+SWITCH = "(switch)"  # an action: switch to the bench Pokemon given as its target
 # Moves that only work in sun (they skip the charge turn there).
 SUN_ONLY = {"Solar Beam", "Solar Blade"}
 CHOICE_ITEMS = {"Choice Scarf", "Choice Band", "Choice Specs"}
@@ -297,6 +299,7 @@ class Battle:
         self.trick_room = 0
         self.tailwind, self.reflect, self.light_screen, self.veil = [0, 0], [0, 0], [0, 0], [0, 0]
         self.fainted_count = [0, 0]
+        self.replaced: dict = {}
         self.turn = 0
         self.lines: list[str] = []
 
@@ -400,6 +403,8 @@ class Battle:
         return spe
 
     def priority(self, m, move):
+        if move == SWITCH:
+            return 7  # switches happen before any move
         p = move_info(move)["priority"]
         if move == "Grassy Glide" and self.terrain == "Grassy":
             p = 1
@@ -561,6 +566,10 @@ class Battle:
                          list(self.status_options(m, foes, ally, incoming)), key=lambda o: -o[0])
         if m.locked and m.item in CHOICE_ITEMS:
             options = [o for o in options if o[1] == m.locked] or [(0.0, m.locked, foes[:1])]
+        switch = self.switch_option(m, foes, ally, incoming, options[0][0] if options else 0.0, planned)
+        if switch and (not options or switch[0] > options[0][0]):
+            planned.setdefault(("switching", m.side), set()).add(switch[2][0])
+            return SWITCH, switch[2]
         if not options:
             return "Struggle", []
         # Mostly the best option; now and then a close second, so the AI isn't fully predictable.
@@ -578,9 +587,53 @@ class Battle:
             planned[("redirect", m.side)] = m
         return mv, targets
 
+    def switch_option(self, m, foes, ally, incoming, best_value, planned):
+        """Switching out pays when m is about to go down (or can do little) and a benched Pokemon takes the
+        incoming attacks better; an incoming Intimidate or Fake Out user adds to it. Switching costs tempo."""
+        taken = planned.get(("switching", m.side), set())
+        bench = [b for b in self.bench[m.side] if b not in taken and not self.sides[m.side][b].fainted]
+        if not bench or (incoming < 0.8 * m.hp and best_value >= 0.25):
+            return None
+        best = None
+        for b in bench:
+            r = self.sides[m.side][b]
+            their = sum(self.threat(f, r) for f in foes) * (0.75 if ally else 1.0)
+            value = (min(incoming, m.hp) - min(their, r.hp)) / 100 - 0.25
+            physical_foe = any(move_info(x)["category"] == "Physical" for f in foes for x in f.s.moves)
+            if r.ability == "Intimidate" and physical_foe:
+                value += 0.3
+            if "Fake Out" in r.s.moves:
+                value += 0.25
+            if m.turns_active == 0:
+                value -= 0.2  # just came in
+            if value > 0 and (best is None or value > best[0]):
+                best = (value, SWITCH, [b])
+        return best
+
+    def switch_to(self, m, b):
+        side = m.side
+        if b not in self.bench[side] or m.fainted:
+            return
+        slot = next(k for k, i in enumerate(self.active[side]) if i is not None and self.sides[side][i] is m)
+        self.bench[side].remove(b)
+        self.bench[side].append(self.sides[side].index(m))
+        m.boosts, m.turns_active, m.locked = Counter(), 0, None
+        self.active[side][slot] = b
+        new = self.sides[side][b]
+        self.replaced[id(m)] = new
+        self.log(f"  {m.name} switches out for {new.name}")
+        self.enter(new)
+
+    def retarget(self, t):
+        """A target that switched out this turn is replaced by whatever came into its place."""
+        while t is not None and id(t) in self.replaced and t not in self.act(t.side):
+            t = self.replaced[id(t)]
+        return t
+
     # ---- turn
     def run_turn(self):
         self.turn += 1
+        self.replaced = {}
         actions, planned = {}, {}
         for side in (0, 1):
             def decides_first(x):  # supports commit first, so partners can plan around them
@@ -622,6 +675,9 @@ class Battle:
         self.end_turn()
 
     def use(self, m, mv, targets, turn):
+        if mv == SWITCH:
+            self.switch_to(m, targets[0])
+            return
         info = move_info(mv)
         foes, ally = self.foes(m), self.ally(m)
         if m.item in CHOICE_ITEMS:
@@ -652,7 +708,7 @@ class Battle:
         if spread:
             hit = list(foes) + ([ally] if mv in ALLY_SPREAD and ally else [])
         else:
-            t = targets[0] if targets else None
+            t = self.retarget(targets[0]) if targets else None
             if t is None or t.fainted:
                 t = foes[0] if foes else None
             if t is None:
@@ -780,8 +836,8 @@ class Battle:
         elif mv in HEAL:
             m.hp = min(100.0, m.hp + 50)
         elif targets:
-            t = targets[0]
-            if t.fainted or t.protected or t.ability == "Good as Gold":
+            t = self.retarget(targets[0])
+            if t.fainted or t.protected or t.ability == "Good as Gold" or t not in self.act(t.side):
                 return
             if m.ability == "Prankster" and "Dark" in t.s.types:
                 return
@@ -909,6 +965,34 @@ def bring(team: list[Spec], n: int, rng: random.Random, fixed=()) -> list[Spec]:
             megas += 1
         chosen.append(s)
     return chosen
+
+
+def preview(team: list[Spec], opponents: list[Spec], n: int, rng: random.Random, fixed=()) -> list[Spec]:
+    """Team preview: the n Pokemon (at most one Mega, `fixed` included) whose best matchups cover the opponent's
+    team best, best pair leading. Matchup = expected damage dealt minus half the damage taken, from the calc;
+    a little noise keeps picks from being identical every game."""
+    battle = Battle(team, opponents, rng)
+    ours, theirs = battle.sides
+    value = [[min(100.0, battle.threat(a, b)) - 0.5 * min(100.0, battle.threat(b, a)) for b in theirs] for a in ours]
+
+    def cover(members):
+        return sum(max(value[i][j] for i in members) for j in range(len(theirs))) / 100
+
+    fixed_idx = [team.index(s) for s in fixed]
+    best = None
+    for combo in itertools.combinations(range(len(team)), min(n, len(team))):
+        if not set(fixed_idx) <= set(combo) or sum("-Mega" in team[i].name for i in combo) > 1:
+            continue
+        score = cover(combo) + rng.gauss(0, 0.3)
+        if best is None or score > best[0]:
+            best = (score, combo)
+    chosen = list(best[1])
+    if fixed_idx:
+        lead = fixed_idx[:2]
+    else:
+        lead = list(max(itertools.combinations(chosen, 2), key=lambda pair: cover(pair) + rng.gauss(0, 0.2)))
+    back = sorted((i for i in chosen if i not in lead), key=lambda i: -cover([i]))
+    return [team[i] for i in lead + back]
 
 
 def play_core(core: list[Spec], team: list[Spec], seed: int, reps: int = 2) -> list[float]:

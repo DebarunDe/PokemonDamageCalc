@@ -233,3 +233,27 @@ def test_resist_berry_is_used_up_and_lum_berry_cures_once():
     assert lum.status == "" and lum.item is None
     lum.set_status("brn")
     assert lum.status == "brn"
+
+
+def test_switching_out_of_a_bad_matchup(garchomp):
+    weak = spec("Arcanine-Hisui", ["Flare Blitz"], ability="Rock Head")  # 4x weak to Earthquake
+    tank = spec("Corviknight", ["Brave Bird"], ability="Mirror Armor", nature="Impish", sp={"hp": 32, "def": 32})
+    battle = sim.Battle([weak, tank], [garchomp], random.Random(0))
+    battle.active[0], battle.bench[0] = [0], [1]
+    me, foe = battle.sides[0][0], battle.sides[1][0]
+    me.turns_active = 1
+    assert battle.choose(me, {}) == (sim.SWITCH, [1])
+    battle.use(me, sim.SWITCH, [1], new_turn())
+    assert battle.act(0) == [battle.sides[0][1]]
+    battle.use(foe, "Earthquake", [me], new_turn())  # aimed at the Pokemon that left
+    assert battle.sides[0][1].hp == 100 and me.hp == 100  # Corviknight is immune; Arcanine is safe on the bench
+
+
+def test_preview_brings_legal_teams_with_the_core_leading(garchomp):
+    team = [spec(n, ["Protect", "Earthquake"]) for n in ("Charizard-Mega-Y", "Metagross-Mega", "Incineroar",
+                                                         "Rillaboom", "Gholdengo")] + [garchomp]
+    opp = [spec(n, ["Flare Blitz"]) for n in ("Incineroar", "Arcanine-Hisui", "Sneasler", "Kingambit")]
+    for seed in range(5):
+        chosen = sim.preview(team, opp, 4, random.Random(seed), fixed=[team[2], team[3]])
+        assert chosen[:2] == [team[2], team[3]] and len(chosen) == 4
+        assert sum("-Mega" in s.name for s in chosen) <= 1

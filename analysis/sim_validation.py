@@ -6,6 +6,7 @@ beyond what their players' skill predicts (wins above skill per game, as in anal
 Simulated side, two modes:
     team      (default) the real teams carrying the core: a sample of them, each bringing the core plus others from
               its own six, plays 4v4 against real opponents. This measures the same thing as the real number.
+              Both sides pick their four at team preview (doubles_sim.preview), or at random with --preview random.
     isolated  the core alone (2v2 or 3v3) against as many of each opponent's Pokemon.
 
 The report gives the correlation between the two, the best correlation the noise on both sides allows, and the
@@ -52,7 +53,7 @@ def _specs(names):
 
 
 def _play(job):
-    core_names, mode, teams, seed = job
+    core_names, mode, teams, seed, smart = job
     core = _specs(core_names)
     results = []
     for k, team_names in enumerate(teams):
@@ -67,7 +68,11 @@ def _play(job):
             else:
                 if len(team) < 4 or len(opp) < 4:
                     continue
-                ours, theirs = _sim.bring(team, 4, rng, fixed=core), _sim.bring(opp, 4, rng)
+                if smart:
+                    ours = _sim.preview(team, opp, 4, rng, fixed=core)
+                    theirs = _sim.preview(opp, team, 4, rng)
+                else:
+                    ours, theirs = _sim.bring(team, 4, rng, fixed=core), _sim.bring(opp, 4, rng)
             results.append(_sim.Battle(ours, theirs, random.Random(rng.randrange(10**9))).run())
     return core_names, results
 
@@ -125,6 +130,8 @@ def main(argv=None):
     p.add_argument("--mode", choices=("team", "isolated"), default="team")
     p.add_argument("--teams-per-core", type=int, default=8, help="real teams carrying each core (team mode)")
     p.add_argument("--opponents", type=int, default=40)
+    p.add_argument("--preview", choices=("smart", "random"), default="smart",
+                   help="how both sides pick their four in team mode")
     p.add_argument("--workers", type=int, default=4)
     args = p.parse_args(argv)
 
@@ -132,7 +139,8 @@ def main(argv=None):
     cores = real_cores(args.size, args.cores, args.teams_per_core if args.mode == "team" else 1)
     opponents = [names for _, names in doubles_sim.opponent_teams(300)]
     opponents = random.Random(5).sample(opponents, min(args.opponents, len(opponents)))
-    jobs = [(c[0], args.mode, c[4] if args.mode == "team" else [[]], i) for i, c in enumerate(cores)]
+    jobs = [(c[0], args.mode, c[4] if args.mode == "team" else [[]], i, args.preview == "smart")
+            for i, c in enumerate(cores)]
     print(f"{len(cores)} real {args.size}-cores, {args.mode} mode, {len(opponents)} opponents", flush=True)
     with mp.get_context("spawn").Pool(args.workers, initializer=_init, initargs=(opponents,)) as pool:
         simulated = dict(pool.imap_unordered(_play, jobs))
