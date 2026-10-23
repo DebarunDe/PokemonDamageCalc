@@ -200,3 +200,12 @@ python analysis/core_search.py                                                  
 `core_search.py` screens every pair of the most used Pokémon (at most one Mega per core) on a few teams, plays the
 best again on many more, then extends the best pairs to trios and the best trios to quads the same way. The best
 pair of a trio or quad leads. Results go to `output/cores_<size>.csv`.
+
+**How far to trust it.** `sim_validation.py` checks the simulator against reality: for the 70 most played real pairs
+it plays the real teams carrying each pair (4v4, both sides picking their four at team preview) and correlates the
+simulated win rate with how those teams actually did, beyond their players' skill. As of October 2026 the
+correlation is about zero (−0.08 to +0.05 across versions), although the real numbers are reliable (split by
+tournament, the two halves agree at r ≈ 0.57; reliability ≈ 0.73). The simulator overrates high-powered attackers
+(Mega Garchomp Z, Mega Salamence, Gholdengo, Volcarona) and underrates bulky, support and late-game Pokémon
+(Grimmsnarl, Kingambit, Archaludon, Mega Charizard Y). Use it to compare sets within a core or to check specific
+interactions, not to rank cores; rank those from tournament results.
