@@ -440,6 +440,9 @@ class Battle:
 
     def attack_options(self, m, foes, ally, planned):
         first = m.turns_active == 0
+        # Damage and KOs count for more against the foes that threaten our side most (focus the biggest threat).
+        ours = [x for x in (m, ally) if x is not None]
+        danger = {id(f): 0.5 + min(1.0, max(self.threat(f, x) for x in ours) / 100) for f in foes}
         for mv in m.s.moves:
             info = move_info(mv)
             if info["category"] == "Status" or mv in NO_SELECT:
@@ -458,7 +461,8 @@ class Battle:
                     remaining = max(1.0, t.hp - planned.get(id(t), 0.0))
                     if t.item == "Focus Sash" and t.hp >= 100 and lo < 200:
                         lo, hi = min(lo, 99.0), min(hi, 99.0)
-                    value += min(remaining, (lo + hi) / 2) * acc / 100 + 0.6 * self.ko_chance(lo, hi, remaining) * acc
+                    value += danger[id(t)] * (min(remaining, (lo + hi) / 2) * acc / 100
+                                              + 0.6 * self.ko_chance(lo, hi, remaining) * acc)
                     if mv == "Fake Out" and not self.fake_out_blocked(t, foes):
                         if ally:
                             value += 0.35 + max(self.threat(t, ally), self.threat(t, m)) / 120
