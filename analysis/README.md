@@ -227,31 +227,37 @@ Results go to `output/core_ranking_<size>.csv`.
 # Synergy model (ideas for new cores)
 
 Core ranking only scores cores people already play. `synergy.py` learns *why* Pokémon work together so it can score
-pairs that have rarely or never been played. Each Pokémon gets a role profile from its real sets and base stats
-(Fake Out, redirection, Intimidate, Tailwind, Trick Room, screens, sleep, pivoting, Wide Guard, Helping Hand,
-weather and terrain setters and users, setup, priority, spread moves, physical / special, fast / slow, bulky,
-Protect, Mega). A team's result (wins per game above its player's skill) is modelled as each member's individual
-strength plus, for every pair on the team, a learned weight for each role × role combination and a type-fit term
-(weaknesses shared, weaknesses covered), fitted by weighted ridge regression.
+pairs that have rarely or never been played. Each set a Pokémon is commonly run with is its own unit (Choice Scarf
+vs Bulk Up Annihilape, Dragon Dance vs Low Kick Mega Tyranitar; sets on fewer than 30 teams join the nearest common
+one), with its strength shrunk toward its species'. Each unit gets a role profile from its moves, item, ability and
+base stats (Fake Out, redirection, Intimidate, Tailwind, Trick Room, screens, sleep, pivoting, Wide Guard, Helping
+Hand, weather setters and users, Psychic / Grassy / Electric terrain setters and users, setup, priority, spread
+moves, physical / special, Choice item, fast / slow, bulky, Protect, Mega). A team's result (wins per game above
+its player's skill) is modelled as each member's individual strength plus, for every pair on the team, a learned
+weight for each role × role combination and a type-fit term (weaknesses shared, weaknesses covered), fitted by
+weighted ridge regression.
 
 ```bash
-python analysis/synergy.py validate    # held-out pairs and later events vs an individual-only baseline (~15 min)
+python analysis/synergy.py validate    # per species vs per set, with and without synergy (~25 min)
+python analysis/synergy.py sets        # every set's individual strength and share of its species (~3 min)
 python analysis/synergy.py suggest     # pairs ranked by how sure the model is of their synergy (~5 min)
 ```
 
 **Validation (October 2026).** Correlation between predicted and actual results of the teams carrying each pair,
 weighted by games:
 
-| test | individual strength only | + role and type synergy |
-| --- | --- | --- |
-| held-out pairs (69 pairs with 500+ games; every team carrying them hidden while fitting) | +0.24 | **+0.45** |
-| later events (fit before 26 Sep, predict 512 pairs after) | +0.16 | **+0.37** |
+| test | per species | per species + synergy | per set | per set + synergy |
+| --- | --- | --- | --- | --- |
+| held-out pairs (69 pairs, 500+ games; their teams hidden while fitting) | +0.24 | +0.30 | +0.39 | **+0.40** |
+| later events (fit before 26 Sep, predict 512 pairs after) | +0.16 | +0.28 | +0.49 | **+0.52** |
 
-On held-out pairs the synergy part correlates +0.58 with what the baseline missed. Learned latent "styles"
-(recommender-style factors, `Model(latent=True)`) did not generalise to unseen pairs (+0.01), so they are off by
-default. The penalty on the role weights was tuned on the later-events split, so the held-out-pairs test is the
-independent check. The model recovers the established strong cores (Trick Room sun with Farigiraf and Mega Charizard
-Y, Archaludon + Pelipper rain, Indeedee + Farigiraf). Its role labels are coarse, though, so check a suggested pair
-with damage calcs and the simulator before building around it.
+Scoring sets instead of species is the big gain. Once sets have their own strength, role synergy adds little, and
+only with its weights shrunk hard (the default); a lot of what looked like synergy per species was set choice.
+Splitting terrain by type (so Electric Terrain doesn't count as helping Expanding Force) and adding a Choice role
+made the per-species synergy validate worse (+0.45 to +0.30 on held-out pairs), a sign of how fragile the role
+terms are. Learned latent "styles" (`Model(latent=True)`) did not generalise to unseen pairs, so they are off. The
+shrinkage was tuned on the later-events split, so the held-out-pairs test is the independent check. `suggest` skips
+same-species pairs, two Megas, and two weather setters (the model has no term for weather clashes).
 
-Results go to `output/synergy_pairs.csv`.
+Treat `sets` as the most reliable output and `suggest` as a source of ideas to check with damage calcs. Results go
+to `output/synergy_sets.csv` and `output/synergy_pairs.csv`.
