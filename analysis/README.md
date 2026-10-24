@@ -205,8 +205,8 @@ pair of a trio or quad leads. Results go to `output/cores_<size>.csv`.
 it plays the real teams carrying each pair (4v4, both sides picking their four at team preview) and correlates the
 simulated win rate with how those teams actually did, beyond their players' skill. As of October 2026 the
 correlation is about zero (−0.10 to +0.05 across versions, including the October AI that values setup moves by
-the damage they add and sets up behind a partner's Fake Out or redirection), although the real numbers are reliable (split by
-tournament, the two halves agree at r ≈ 0.57; reliability ≈ 0.73). The simulator overrates high-powered attackers
+the damage they add and sets up behind a partner's Fake Out or redirection), although the real numbers are
+reliable (split by tournament, the two halves agree at r ≈ 0.57; reliability ≈ 0.73). The simulator overrates high-powered attackers
 (Mega Garchomp Z, Mega Salamence, Gholdengo, Volcarona) and underrates bulky, support and late-game Pokémon
 (Grimmsnarl, Kingambit, Archaludon, Mega Charizard Y). Use it to compare sets within a core or to check specific
 interactions, not to rank cores; rank those from tournament results. Seed battles with `doubles_sim.seed_of(...)`
