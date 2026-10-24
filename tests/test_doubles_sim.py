@@ -257,3 +257,50 @@ def test_preview_brings_legal_teams_with_the_core_leading(garchomp):
         chosen = sim.preview(team, opp, 4, random.Random(seed), fixed=[team[2], team[3]])
         assert chosen[:2] == [team[2], team[3]] and len(chosen) == 4
         assert sum("-Mega" in s.name for s in chosen) <= 1
+
+
+@pytest.fixture
+def kingambit():
+    return spec("Kingambit", ["Kowtow Cleave", "Sucker Punch", "Swords Dance", "Protect"], ability="Defiant",
+                item="Life Orb", nature="Adamant", sp={"hp": 18, "atk": 32, "spd": 16})
+
+
+def setup_battle(kingambit):
+    incineroar = spec("Incineroar", ["Fake Out", "Flare Blitz", "Parting Shot"], ability="Intimidate")
+    sneasler = spec("Sneasler", ["Close Combat", "Dire Claw", "Fake Out", "Protect"], ability="Unburden",
+                    item="White Herb", nature="Adamant", sp={"hp": 2, "atk": 32, "spe": 32})
+    corviknight = spec("Corviknight", ["Brave Bird", "Bulk Up", "Power Trip", "Roost"], ability="Mirror Armor",
+                       item="Psychic Seed", nature="Careful", sp={"hp": 32, "atk": 2, "spd": 32})
+    return sim.Battle([kingambit, incineroar], [sneasler, corviknight], random.Random(0))
+
+
+def test_sets_up_behind_a_partners_fake_out(kingambit):
+    battle = setup_battle(kingambit)
+    gambit, sneasler = battle.sides[0][0], battle.sides[1][0]
+    # Sneasler threatens a KO, so on its own Kingambit doesn't set up; with Sneasler Faked Out, it does.
+    assert battle.choose(gambit, {})[0] != "Swords Dance"
+    assert battle.choose(gambit, {("fake out", 0): id(sneasler)})[0] == "Swords Dance"
+
+
+def test_no_setup_when_already_boosted_to_the_cap(kingambit):
+    battle = setup_battle(kingambit)
+    gambit, sneasler = battle.sides[0][0], battle.sides[1][0]
+    gambit.boosts["atk"] = 4
+    assert battle.choose(gambit, {("fake out", 0): id(sneasler)})[0] != "Swords Dance"
+
+
+def test_phantom_force_vanishes_then_hits_through_protect(garchomp):
+    annihilape = spec("Annihilape", ["Phantom Force"], ability="Defiant", nature="Adamant", sp={"atk": 32})
+    battle = sim.Battle([annihilape], [garchomp], random.Random(0))
+    a, b = battle.sides[0][0], battle.sides[1][0]
+    battle.use(a, "Phantom Force", [b], new_turn())
+    assert a.vanished and a.charging and b.hp == 100
+    battle.use(b, "Dragon Claw", [a], new_turn())
+    assert a.hp == 100  # can't be hit while vanished
+    battle.use(b, "Protect", [], new_turn())
+    battle.use(a, "Phantom Force", [b], new_turn())
+    assert not a.vanished and b.hp < 100
+
+
+def test_seed_of_is_the_same_in_every_process():
+    assert sim.seed_of("a", 1) == 2745452491

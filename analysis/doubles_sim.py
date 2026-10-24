@@ -2,7 +2,8 @@
 
 Each battle plays out turn by turn with @smogon/calc damage (via champcalc), random damage rolls,
 accuracy and critical hits. Both sides use the same heuristic AI: take KOs and focus fire, Protect
-when about to be KO'd, set up when it's safe (counting a partner's Fake Out or redirection), Fake Out
+when about to be KO'd, set up when the boosted attacks over the next turns are worth more than attacking now
+(counting the chance to survive, so a partner's Fake Out or redirection makes setting up likelier), Fake Out
 the biggest threat on the first turn, set Tailwind or Trick Room when slower, and so on.
 
 Mechanics covered:
@@ -15,6 +16,7 @@ Mechanics covered:
     setup moves, Parting Shot, Haze, Taunt, sleep, burn, paralysis, healing moves
     Focus Sash, Sitrus Berry, Leftovers, Life Orb, Choice Scarf, recoil, drain, Knock Off
     Sucker Punch, Rage Fist, Last Respects, Eruption / Water Spout, Electro Shot, Steel Roller, Grassy Glide,
+    Phantom Force / Shadow Force (the user can't be hit on the first turn; the hit goes through Protect),
     spread moves (and Earthquake hitting the ally), replacements from the back
     Choice item locking; Hurricane / Thunder / Blizzard accuracy in weather; Solar Beam and Growth in sun;
     accuracy of status moves (Sleep Powder 75%), Wide Lens, Ancient Power's stat boost
@@ -43,6 +45,7 @@ import json
 import random
 import sqlite3
 import sys
+import zlib
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -97,8 +100,12 @@ HEAL = {"Recover", "Roost", "Slack Off", "Soft-Boiled", "Moonlight", "Morning Su
 SLEEP_MOVES = {"Spore", "Sleep Powder", "Hypnosis"}
 # Moves the AI never picks: charge or recharge turns, or conditions the simulator doesn't model.
 NO_SELECT = {"Hyper Beam", "Giga Impact", "Focus Punch", "Dream Eater", "Last Resort",
-             "Future Sight", "Doom Desire", "Belch", "Meteor Beam", "Sky Attack", "Bounce", "Fly", "Dig", "Dive",
-             "Phantom Force", "Shadow Force"}
+             "Future Sight", "Doom Desire", "Belch", "Meteor Beam", "Sky Attack", "Bounce", "Fly", "Dig", "Dive"}
+# Two-turn moves that vanish the user on the first turn (nothing can hit it) and strike through Protect on the second.
+VANISH = {"Phantom Force", "Shadow Force"}
+# Extra turns a setup move's boost is expected to pay off over (the AI sets up when the boosted attacks over
+# these turns, weighted by its chance to live, beat attacking now).
+SETUP_HORIZON = 2.0
 INTIMIDATE_IMMUNE = {"Clear Body", "Hyper Cutter", "White Smoke", "Full Metal Body", "Inner Focus", "Oblivious",
                      "Own Tempo", "Scrappy", "Mirror Armor", "Guard Dog"}
 DROP_IMMUNE = {"Clear Body", "White Smoke", "Full Metal Body", "Mirror Armor"}
@@ -119,6 +126,11 @@ CONTACT_PUNISH = {"Rough Skin": 1 / 8, "Iron Barbs": 1 / 8}  # share of the atta
 
 calc = Calculator()
 _moves: dict[str, dict] = {}
+
+
+def seed_of(*parts) -> int:
+    """A seed that is the same in every process (hash() of strings is randomised per process)."""
+    return zlib.crc32(repr(parts).encode())
 
 
 def move_info(name: str) -> dict:
@@ -246,6 +258,7 @@ class Mon:
         self.taunt = 0
         self.hits_taken = 0
         self.charging = None
+        self.vanished = False
         self.locked = None  # move a Choice item locks it into
         self.item_lost = False  # for Unburden
 
@@ -475,6 +488,8 @@ class Battle:
                     value -= 1.2 * (lo + hi) / 2 / 100 + self.ko_chance(lo, hi, ally.hp)
                 if mv == "Sucker Punch":
                     value *= 0.8
+                if mv in VANISH:
+                    value *= 0.85  # lands a turn later, but dodges that turn's attacks and goes through Protect
                 if info["priority"] > 0 and mv != "Fake Out":
                     value *= 1.1
                 yield value, mv, targets
@@ -492,12 +507,7 @@ class Battle:
                 elif not m.last_protect and first and incoming >= 0.8 * m.hp:
                     value = 0.3
             elif mv in BOOST:
-                b = BOOST[mv]
-                key = max(b, key=lambda k: b[k])
-                if m.boosts[key] < 2 and incoming < 0.55 * m.hp:
-                    value = 0.9 if first or m.boosts[key] == 0 else 0.6
-                if mv == "Agility" and all(self.speed(f) < my_speed for f in foes):
-                    value = 0.0
+                continue  # valued in setup_options, against the attacks they improve
             elif mv == "Tailwind":
                 slowest = min(self.speed(x) for x in self.act(m.side))
                 if self.tailwind[m.side] <= 0 and any(self.speed(f) > slowest for f in foes):
@@ -557,6 +567,36 @@ class Battle:
             if value > 0:
                 yield value, mv, targets
 
+    def setup_options(self, m, foes, ally, planned, incoming, now):
+        """A setup move is worth the extra attack value its boost buys over the next turns (SETUP_HORIZON),
+        times the chance m lives to use it, plus a little for any foes it newly outspeeds and for defensive
+        boosts. `now` is the value of m's best attack this turn."""
+        if m.taunt > 0:
+            return
+        survive = max(0.0, min(1.0, 1.15 - incoming / max(m.hp, 1.0)))
+        if survive <= 0:
+            return
+        for mv in m.s.moves:
+            if mv not in BOOST:
+                continue
+            boost = dict(BOOST[mv])
+            if mv == "Growth" and self.weather == "Sun":
+                boost = {k: 2 * v for k, v in boost.items()}
+            if all(m.boosts[k] >= 4 for k, v in boost.items() if v > 0):
+                continue
+            saved = Counter(m.boosts)
+            faster_before = sum(self.speed(f) > self.speed(m) for f in foes)
+            for k, v in boost.items():
+                m.boosts[k] = max(-6, min(6, m.boosts[k] + v))
+            after = max((o[0] for o in self.attack_options(m, foes, ally, planned)), default=0.0)
+            faster_after = sum(self.speed(f) > self.speed(m) for f in foes)
+            m.boosts = saved
+            outspeed = 0.0 if self.trick_room > 0 else 0.25 * (faster_before - faster_after)
+            bulk = 0.1 * sum(v for k, v in boost.items() if k in ("def", "spd") and v > 0)
+            value = survive * (SETUP_HORIZON * (after - now) + outspeed + bulk)
+            if value > 0:
+                yield value, mv, []
+
     def choose(self, m, planned):
         foes, ally = self.foes(m), self.ally(m)
         if not foes:
@@ -566,8 +606,10 @@ class Battle:
         incoming = sum(self.threat(f, m) for f in foes if id(f) != fake_out_target) * (0.75 if ally else 1.0)
         if redirector is not None and redirector is not m:
             incoming *= 0.35
-        options = sorted(list(self.attack_options(m, foes, ally, planned)) +
-                         list(self.status_options(m, foes, ally, incoming)), key=lambda o: -o[0])
+        attacks = list(self.attack_options(m, foes, ally, planned))
+        now = max((o[0] for o in attacks), default=0.0)
+        options = sorted(attacks + list(self.status_options(m, foes, ally, incoming))
+                         + list(self.setup_options(m, foes, ally, planned, incoming, now)), key=lambda o: -o[0])
         if m.locked and m.item in CHOICE_ITEMS:
             options = [o for o in options if o[1] == m.locked] or [(0.0, m.locked, foes[:1])]
         switch = self.switch_option(m, foes, ally, incoming, options[0][0] if options else 0.0, planned)
@@ -622,6 +664,7 @@ class Battle:
         self.bench[side].remove(b)
         self.bench[side].append(self.sides[side].index(m))
         m.boosts, m.turns_active, m.locked = Counter(), 0, None
+        m.charging, m.vanished = None, False
         self.active[side][slot] = b
         new = self.sides[side][b]
         self.replaced[id(m)] = new
@@ -708,6 +751,12 @@ class Battle:
             if self.weather == "Rain":
                 m.boost("spa", 1)
             m.charging = None
+        if mv in VANISH:
+            if not m.charging:
+                m.charging, m.vanished = (mv, targets), True
+                self.log(f"  {m.name} vanishes ({mv})")
+                return
+            m.charging, m.vanished = None, False
         spread = info["spread"]
         if spread:
             hit = list(foes) + ([ally] if mv in ALLY_SPREAD and ally else [])
@@ -728,7 +777,10 @@ class Battle:
         for t in hit:
             if t.fainted:
                 continue
-            if t.protected:
+            if t.vanished:
+                self.log(f"  {t.name} can't be hit ({m.name}'s {mv})")
+                continue
+            if t.protected and mv not in VANISH:
                 self.log(f"  {t.name} protected from {m.name}'s {mv}")
                 continue
             if spread and turn["wide"][t.side]:
@@ -878,6 +930,7 @@ class Battle:
         new = self.bench[side].pop(0)
         self.bench[side].append(self.sides[side].index(m))
         m.boosts, m.turns_active, m.locked = Counter(), 0, None
+        m.charging, m.vanished = None, False
         self.active[side][slot] = new
         self.enter(self.sides[side][new])
 
