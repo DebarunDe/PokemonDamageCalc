@@ -21,7 +21,7 @@ Mechanics covered:
     Choice item locking; Hurricane / Thunder / Blizzard accuracy in weather; Solar Beam and Growth in sun;
     accuracy of status moves (Sleep Powder 75%), Wide Lens, Ancient Power's stat boost
     Supreme Overlord, Unburden, Hospitality, Friend Guard, Rough Skin / Iron Barbs; White Herb, Rocky Helmet,
-    Lum Berry and type-resist berries (used up after one hit)
+    terrain seeds, Lum Berry and type-resist berries (used up after one hit)
 Not covered: voluntary switching (other than Parting Shot), Encore, Substitute,
 abilities beyond those above and the ones the calc applies to damage.
 
@@ -122,6 +122,9 @@ RESIST_BERRIES = {"Chople Berry": "Fighting", "Occa Berry": "Fire", "Passho Berr
                   "Coba Berry": "Flying", "Payapa Berry": "Psychic", "Tanga Berry": "Bug", "Charti Berry": "Rock",
                   "Kasib Berry": "Ghost", "Haban Berry": "Dragon", "Colbur Berry": "Dark", "Babiri Berry": "Steel",
                   "Roseli Berry": "Fairy", "Chilan Berry": "Normal"}
+# Terrain seeds: consumed for +1 to a stat when their terrain is up (which also triggers Unburden).
+SEEDS = {"Electric Seed": ("Electric", "def"), "Grassy Seed": ("Grassy", "def"), "Psychic Seed": ("Psychic", "spd"),
+         "Misty Seed": ("Misty", "spd")}
 CONTACT_PUNISH = {"Rough Skin": 1 / 8, "Iron Barbs": 1 / 8}  # share of the attacker's HP lost on contact
 
 calc = Calculator()
@@ -355,6 +358,16 @@ class Battle:
         ally = self.ally(m)
         if m.ability == "Hospitality" and ally:
             ally.hp = min(100.0, ally.hp + 25)
+        self.use_seeds()
+
+    def use_seeds(self):
+        for side in (0, 1):
+            for x in self.act(side):
+                seed = SEEDS.get(x.item)
+                if seed and self.terrain == seed[0]:
+                    x.boost(seed[1], 1)
+                    x.lose_item()
+                    self.log(f"  {x.name} uses its {seed[0]} Seed")
 
     # ---- damage
     def field(self, defender, helping_hand=False):

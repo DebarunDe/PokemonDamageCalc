@@ -304,3 +304,15 @@ def test_phantom_force_vanishes_then_hits_through_protect(garchomp):
 
 def test_seed_of_is_the_same_in_every_process():
     assert sim.seed_of("a", 1) == 2745452491
+
+
+def test_terrain_seed_boosts_and_triggers_unburden():
+    sneasler = spec("Sneasler", ["Close Combat"], ability="Unburden", item="Electric Seed", nature="Jolly",
+                    sp={"spe": 32})
+    raichu = spec("Raichu-Mega-X", ["Fake Out"], ability="Electric Surge")
+    battle = sim.Battle([sneasler, raichu], [spec("Incineroar", ["Fake Out"], ability="Blaze")], random.Random(0))
+    for m in battle.act(0) + battle.act(1):
+        battle.enter(m)
+    s = battle.sides[0][0]
+    assert battle.terrain == "Electric" and s.item is None and s.boosts["def"] == 1
+    assert battle.speed(s) == 2 * s.s.speed  # Unburden
