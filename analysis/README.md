@@ -354,3 +354,10 @@ Replay pitfalls, both handled: only Pokémon that come out are seen, and a winne
 showing 2-3 Pokémon win 76%, all 4 win 43%), so within-team tests use leads, not "brought"; and a Mega's form is
 only seen once it Mega Evolves, so the ladder uses team preview names and only the dominant form of a species (90%+
 of its tournament teams) is compared with its ladder estimate.
+
+**Idea generators on the ladder (`idea_check.py`).** Scored against ladder pair effects beyond species (independent
+of the tournament data they were built from): `synergy.py suggest` r +0.01 over 856 pairs (+0.03 among pairs rarely
+played in tournaments); the interaction graph's calc benefit r −0.01 over 1,223 user + provider pairs, with no
+condition clearly better than chance (Tailwind r +0.10 is the best of 13). Even the plain tournament pair effect
+only reaches r +0.07: pair synergy beyond the two members' own strength is too small in this format to find or
+confirm from results, so the generators' ideas are untested hypotheses at best.
