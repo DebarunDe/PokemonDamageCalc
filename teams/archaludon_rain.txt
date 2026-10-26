@@ -1,9 +1,9 @@
 # Archaludon rain, two modes (Pokémon Champions VGC, Regulation M-C)
 # Rain mode: Archaludon + Pelipper + Mega Swampert + Basculegion-F (fast offense, Raichu Y / Floette / Sylveon / mirrors).
-# Second mode: Archaludon + Pelipper + Gliscor + Mega Gengar (Rillaboom, Trick Room, sun / sand).
-# Gliscor took the slot because it stacks none of the mode's weaknesses (Ground: Archaludon + Gengar,
-# Fighting: Archaludon, Electric / Rock: Pelipper, Psychic / Ghost / Dark: Gengar) and is immune to Ground and
-# Electric. Its own weaknesses are Water (boosted by our rain) and Ice: keep it away from rain and snow teams.
+# Second mode: Archaludon + Pelipper + Venusaur + Mega Gengar (Rillaboom, Trick Room, sun / sand / snow).
+# Venusaur (Life Orb set: +4.9 on 219 teams) resists the Fighting / Electric aimed at Archaludon and Pelipper,
+# takes Water and Ice well, and Leaf Storm covers opposing Mega Swampert / Basculegion, the gap both modes had.
+# Its one stacked weakness is Psychic, shared with Gengar: Psychic spam + Trick Room is this team's weak spot.
 # SPs = Stat Points (max 32 per stat, 66 total). One Mega per game: Swampert in rain mode, Gengar in the second.
 # Swift Swim Speeds in rain: Basculegion-F 260, Mega Swampert 212 (beats the 200-204 tier: Mega Raichu Y,
 # Mega Garchomp-Z, Mega Delphox). Mega Gengar 182 beats Sneasler (172) and Mega Staraptor (178).
@@ -44,13 +44,13 @@ Modest Nature
 - Ice Beam
 - Protect
 
-Gliscor @ Life Orb
-Ability: Hyper Cutter
-SPs: 32 HP / 16 Atk / 18 SpD
-Adamant Nature
-- High Horsepower
-- Dual Wingbeat
-- Tailwind
+Venusaur @ Life Orb
+Ability: Chlorophyll
+SPs: 32 HP / 32 SpA / 2 SpD
+Modest Nature
+- Leaf Storm
+- Sludge Bomb
+- Earth Power
 - Protect
 
 Gengar @ Gengarite
