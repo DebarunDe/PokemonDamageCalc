@@ -1,0 +1,60 @@
+# Archaludon rain, two modes (Pokémon Champions VGC, Regulation M-C)
+# Rain mode: Archaludon + Pelipper + Mega Swampert + Basculegion-F (fast offense, Raichu Y / Floette / Sylveon / mirrors).
+# Second mode: Archaludon + Pelipper + Kingambit + Mega Gengar (Rillaboom, Trick Room, snow / sun / sand).
+# SPs = Stat Points (max 32 per stat, 66 total). One Mega per game: Swampert in rain mode, Gengar in the second.
+# Swift Swim Speeds in rain: Basculegion-F 260, Mega Swampert 212 (beats the 200-204 tier: Mega Raichu Y,
+# Mega Garchomp-Z, Mega Delphox). Mega Gengar 182 beats Sneasler (172) and Mega Staraptor (178).
+
+Archaludon @ Leftovers
+Ability: Stamina
+SPs: 32 HP / 2 SpA / 32 SpD
+Bold Nature
+- Electro Shot
+- Dragon Pulse
+- Snarl
+- Protect
+
+Pelipper @ Damp Rock
+Ability: Drizzle
+SPs: 32 HP / 2 Def / 32 SpD
+Bold Nature
+- Hurricane
+- Weather Ball
+- Helping Hand
+- Wide Guard
+
+Swampert @ Swampertite
+Ability: Torrent
+SPs: 18 HP / 32 Atk / 16 Spe
+Adamant Nature
+- Wave Crash
+- High Horsepower
+- Ice Punch
+- Protect
+
+Basculegion-F @ Focus Sash
+Ability: Swift Swim
+SPs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Muddy Water
+- Shadow Ball
+- Ice Beam
+- Protect
+
+Kingambit @ Life Orb
+Ability: Defiant
+SPs: 32 HP / 32 Atk / 2 SpD
+Adamant Nature
+- Kowtow Cleave
+- Sucker Punch
+- Swords Dance
+- Protect
+
+Gengar @ Gengarite
+Ability: Cursed Body
+SPs: 32 HP / 2 SpA / 32 Spe
+Modest Nature
+- Shadow Ball
+- Sludge Bomb
+- Focus Blast
+- Protect
