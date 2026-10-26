@@ -220,30 +220,63 @@ def real_spec(name: str) -> Spec | None:
             return c[0][0] if c else default
         item, pre, nature = top(r[0] for r in rows), top(r[1] for r in rows), top((r[2] for r in rows), "Hardy")
         moves = top((tuple(sorted(json.loads(r[3]))) for r in rows if r[3]), ())
+    _specs[name] = build_spec(name, item, pre, nature, moves)
+    return _specs[name]
+
+
+_spreads: dict[tuple[str, str], dict[str, int]] = {}
+
+
+def ladder_spread(name: str, nature: str) -> dict[str, int]:
+    """The most common ladder spread for this species and nature (max attack and speed if there is none)."""
+    if (name, nature) not in _spreads:
+        sp = None
+        for (value,) in db().execute(
+                "SELECT value FROM showdown_details WHERE regulation = ? AND month = ? AND ladder = 'bo1' "
+                "AND rating = 0 AND pokemon = ? AND kind = 'spread' ORDER BY share DESC LIMIT 10",
+                (REGULATION, LADDER_MONTH, name)):
+            parsed = parse_spread(value)
+            if parsed and parsed[0] == nature:
+                sp = parsed[1]
+                break
+        if sp is None:
+            base = calc.species(name)["base_stats"]
+            sp = {("atk" if base["atk"] >= base["spa"] else "spa"): 32, "spe": 32, "hp": 2}
+        _spreads[(name, nature)] = sp
+    return _spreads[(name, nature)]
+
+
+def build_spec(name, item, pre, nature, moves) -> Spec | None:
+    """A Spec from a tournament entry (pre is the ability as entered, before any Mega Evolution)."""
     try:
         legal = calc.species(name)["abilities"]
     except CalcError:  # a name the calc doesn't know, e.g. one entered in another language
         return None
     ability = pre if (pre in legal or not legal) else legal[0]
-    sp = None
-    for (value,) in db().execute(
-            "SELECT value FROM showdown_details WHERE regulation = ? AND month = ? AND ladder = 'bo1' AND rating = 0 "
-            "AND pokemon = ? AND kind = 'spread' ORDER BY share DESC LIMIT 10", (REGULATION, LADDER_MONTH, name)):
-        parsed = parse_spread(value)
-        if parsed and parsed[0] == nature:
-            sp = parsed[1]
-            break
-    if sp is None:
-        base = calc.species(name)["base_stats"]
-        sp = {("atk" if base["atk"] >= base["spa"] else "spa"): 32, "spe": 32, "hp": 2}
+    nature = nature or "Hardy"
     moves = [m for m in moves if m in calc.all_moves] or ["Struggle"]
     for it in (item, None):
         try:
-            _specs[name] = Spec(name, ability, it, nature, sp, moves, pre_ability=pre)
-            break
+            return Spec(name, ability, it, nature, ladder_spread(name, nature), moves, pre_ability=pre)
         except CalcError:
             continue
-    return _specs[name]
+    return None
+
+
+def team_specs(tournament, player, own_sets=True) -> list[Spec]:
+    """A real tournament team as Specs: each member's registered set (its item, ability, nature and moves) when
+    complete, otherwise the species' most common set. own_sets=False uses the most common sets throughout."""
+    out = []
+    for name, item, pre, nature, moves in db().execute(
+            "SELECT pokemon, item, ability, nature, moves FROM team_members WHERE tournament = ? AND player = ? "
+            "ORDER BY slot", (tournament, player)):
+        spec = None
+        if own_sets and nature and moves and json.loads(moves):
+            spec = build_spec(name, item, pre, nature, tuple(json.loads(moves)))
+        spec = spec or real_spec(name)
+        if spec is not None:
+            out.append(spec)
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------- battle
@@ -1020,6 +1053,18 @@ def opponent_teams(n: int, seed: int = 7) -> list[tuple[str, list[str]]]:
     online = teams(f"t.organizer != 'rk9' AND t.date >= '{RECENT}' AND m.placing <= 8")
     online = random.Random(seed).sample(online, min(len(online), n - len(official)))
     return [("official", t) for t in official] + [("online", t) for t in online]
+
+
+def opponent_team_keys(n: int, seed: int = 7) -> list[tuple[str, tuple]]:
+    """Like opponent_teams, but each team as (pool, (tournament, player)), so its real sets can be loaded."""
+    def teams(where):
+        return [k for k in db().execute(
+            "SELECT DISTINCT m.tournament, m.player FROM team_members m JOIN tournaments t ON t.id = m.tournament "
+            f"WHERE t.regulation = ? AND {where} ORDER BY m.tournament, m.player", (REGULATION,))]
+    official = teams("t.organizer = 'rk9' AND m.placing <= 32")[: n // 2]
+    online = teams(f"t.organizer != 'rk9' AND t.date >= '{RECENT}' AND m.placing <= 8")
+    online = random.Random(seed).sample(online, min(len(online), n - len(official)))
+    return [("official", tuple(k)) for k in official] + [("online", tuple(k)) for k in online]
 
 
 def bring(team: list[Spec], n: int, rng: random.Random, fixed=()) -> list[Spec]:

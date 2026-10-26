@@ -316,3 +316,17 @@ def test_terrain_seed_boosts_and_triggers_unburden():
     s = battle.sides[0][0]
     assert battle.terrain == "Electric" and s.item is None and s.boosts["def"] == 1
     assert battle.speed(s) == 2 * s.s.speed  # Unburden
+
+
+def test_team_specs_use_each_players_registered_sets():
+    if not sim.DB.exists():
+        pytest.skip("needs analysis/data/meta.sqlite")
+    _, key = sim.opponent_team_keys(2)[0]
+    rows = sim.db().execute("SELECT pokemon, item, moves FROM team_members WHERE tournament = ? AND player = ? "
+                            "ORDER BY slot", key).fetchall()
+    own = sim.team_specs(*key)
+    assert [s.name for s in own] == [r[0] for r in rows]
+    for s, (_, item, moves) in zip(own, rows):
+        assert set(s.moves) <= set(sim.json.loads(moves)) and s.item in (item, None)
+    common = sim.team_specs(*key, own_sets=False)
+    assert [s.name for s in common] == [s.name for s in own]

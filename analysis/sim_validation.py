@@ -41,10 +41,11 @@ _sim = None
 _opponents: list = []
 
 
-def _init(opponents):
+def _init(opponents, own_sets):
     global _sim, _opponents
     import doubles_sim
-    _sim, _opponents = doubles_sim, opponents
+    _sim = doubles_sim
+    _opponents = [_team(k, own_sets) for k in opponents]
 
 
 def _specs(names):
@@ -52,15 +53,19 @@ def _specs(names):
     return [s for s in specs if s is not None]
 
 
+def _team(key, own_sets):
+    """A real team's Specs: its registered sets, or (own_sets=False) each species' most common set."""
+    return _sim.team_specs(*key, own_sets=own_sets)
+
+
 def _play(job):
-    core_names, mode, teams, seed, smart = job
+    core_names, mode, teams, seed, smart, own_sets = job
     core = _specs(core_names)
     results = []
-    for k, team_names in enumerate(teams):
-        team = _specs(team_names)
-        for j, opp_names in enumerate(_opponents):
-            opp = _specs(opp_names)
-            rng = random.Random(hash((seed, k, j)) & 0xFFFFFFFF)
+    for k, key in enumerate(teams):
+        team = _team(key, own_sets) if key else []
+        for j, opp in enumerate(_opponents):
+            rng = random.Random(_sim.seed_of(seed, k, j))
             if mode == "isolated":
                 if len(opp) < len(core):
                     continue
@@ -68,18 +73,19 @@ def _play(job):
             else:
                 if len(team) < 4 or len(opp) < 4:
                     continue
+                fixed = [next(s for s in team if s.name == c.name) for c in core if any(s.name == c.name for s in team)]
                 if smart:
-                    ours = _sim.preview(team, opp, 4, rng, fixed=core)
+                    ours = _sim.preview(team, opp, 4, rng, fixed=fixed)
                     theirs = _sim.preview(opp, team, 4, rng)
                 else:
-                    ours, theirs = _sim.bring(team, 4, rng, fixed=core), _sim.bring(opp, 4, rng)
+                    ours, theirs = _sim.bring(team, 4, rng, fixed=fixed), _sim.bring(opp, 4, rng)
             results.append(_sim.Battle(ours, theirs, random.Random(rng.randrange(10**9))).run())
     return core_names, results
 
 
 def real_cores(size: int, n: int, max_teams: int, seed: int = 3):
     """The n most played cores of this size: (core, wins above skill per game in %, its standard error, games,
-    up to max_teams of the real teams carrying it)."""
+    up to max_teams of the real teams carrying it, as (tournament, player))."""
     import doubles_sim
     import signals
     db = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
@@ -103,7 +109,7 @@ def real_cores(size: int, n: int, max_teams: int, seed: int = 3):
             a[0] += w
             a[1] += w + l
             a[2] += skill[key] * (w + l)
-            a[3].append(mons)
+            a[3].append(key)
     use = Counter(m for mons in teams.values() for m in mons)
     out = []
     for core, (w, g, expected, carriers) in sorted(agg.items(), key=lambda kv: -kv[1][1]):
@@ -132,17 +138,20 @@ def main(argv=None):
     p.add_argument("--opponents", type=int, default=40)
     p.add_argument("--preview", choices=("smart", "random"), default="smart",
                    help="how both sides pick their four in team mode")
+    p.add_argument("--sets", choices=("own", "common"), default="own",
+                   help="each real team plays its own registered sets, or every species its most common set")
     p.add_argument("--workers", type=int, default=4)
     args = p.parse_args(argv)
 
     import doubles_sim
     cores = real_cores(args.size, args.cores, args.teams_per_core if args.mode == "team" else 1)
-    opponents = [names for _, names in doubles_sim.opponent_teams(300)]
+    opponents = [key for _, key in doubles_sim.opponent_team_keys(300)]
     opponents = random.Random(5).sample(opponents, min(args.opponents, len(opponents)))
-    jobs = [(c[0], args.mode, c[4] if args.mode == "team" else [[]], i, args.preview == "smart")
+    own = args.sets == "own"
+    jobs = [(c[0], args.mode, c[4] if args.mode == "team" else [None], i, args.preview == "smart", own)
             for i, c in enumerate(cores)]
     print(f"{len(cores)} real {args.size}-cores, {args.mode} mode, {len(opponents)} opponents", flush=True)
-    with mp.get_context("spawn").Pool(args.workers, initializer=_init, initargs=(opponents,)) as pool:
+    with mp.get_context("spawn").Pool(args.workers, initializer=_init, initargs=(opponents, own)) as pool:
         simulated = dict(pool.imap_unordered(_play, jobs))
 
     rows = []
