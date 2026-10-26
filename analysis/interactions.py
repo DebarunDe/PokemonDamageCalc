@@ -8,12 +8,20 @@ the condition against the most used Pokemon (usage-weighted):
     ko2      share it 2HKOs
     speed    share of opponents it outspeeds (under Trick Room: share it moves before)
     survive  share of the opponents' attacks it survives from full HP
-Then the real-results side: the set's wins above player skill on teams with a provider vs without one.
+Then the real-results side: how the set's teams did on teams with a provider vs without one, as wins per game
+beyond what the per-set strengths of each team predict (synergy.py's per-set model), so teams with a provider
+don't look better just for carrying stronger Pokemon. Conditions a set provides itself are skipped.
 
-    python analysis/interactions.py                 # validation + strongest under-played interactions
-    python analysis/interactions.py --min-sets 15
+Validation (October 2026): across 660 set / condition pairs with 150+ games both with and without a provider, the
+calc benefit doesn't predict the real difference (r = -0.02), and real differences are near zero for every
+condition. That test can only see interactions a set does without often; sets that depend on a partner (Electric
+Seed Sneasler with Mega Raichu X: +9.6 with it, -11 without) are rarely played without it, and their value shows up
+in the set's own strength instead. Use the graph to generate and explain ideas, and real results to judge them.
 
-Results go to analysis/output/interactions.csv (not committed).
+    python analysis/interactions.py                 # calcs (slow, cached) + real data + report
+    python analysis/interactions.py --reuse         # reuse the cached calcs
+
+Results go to analysis/output/interactions.csv; calcs are cached in interaction_calcs.csv (not committed).
 """
 
 from __future__ import annotations
@@ -197,21 +205,38 @@ def load_sets(min_sets: int):
 
 
 def results():
-    from signals import player_skill
-    skill = player_skill(ds.db()).set_index(["tournament", "player"])["skill"].to_dict()
-    rec = {}
-    for t, p, w, l in ds.db().execute(
-            "SELECT DISTINCT m.tournament, m.player, m.wins, m.losses FROM team_members m "
-            "JOIN tournaments t ON t.id = m.tournament WHERE t.regulation = ?", (ds.REGULATION,)):
-        if (t, p) in skill and (w or 0) + (l or 0):
-            rec[(t, p)] = (w, w + l, skill[(t, p)] * (w + l))
-    return rec
+    """Each team's wins per game beyond what its members' per-set strengths predict, and its games."""
+    import synergy
+    roster = synergy.Roster(ds.db(), per_set=True)
+    teams = synergy.load_teams(ds.db(), roster)
+    design = synergy.Design(roster, teams)
+    pred = synergy.Model(roles=False).fit(design).predict(design)
+    return {t[6]: (t[1] - p, t[2]) for t, p in zip(teams, pred)}
 
 
 def above(keys, rec):
     ks = [k for k in keys if k in rec]
     g = sum(rec[k][1] for k in ks)
-    return (100 * sum(rec[k][0] - rec[k][2] for k in ks) / g, g, len(ks)) if g else (0.0, 0, 0)
+    return (100 * sum(rec[k][0] * rec[k][1] for k in ks) / g, g, len(ks)) if g else (0.0, 0, 0)
+
+
+def calc_rows(sets, bench):
+    rows = []
+    for name, item, ability, nature, moves in sets:
+        spec = ds.build_spec(name, item, ability, nature, moves)
+        if spec is None:
+            continue
+        base = measure(spec, bench)
+        own = provides({ability, *moves}) | ({"Sun"} if name == "Charizard-Mega-Y" else set())
+        for cond in CONDITIONS:
+            if cond in own:
+                continue  # it provides this itself
+            eff = condition_effect(spec, cond, bench, base)
+            if eff is not None:
+                rows.append({"species": name, "item": item, "ability": ability, "nature": nature,
+                             "moves": "|".join(moves), "condition": cond, "score": score(eff),
+                             **{f"d_{k}": v for k, v in eff.items()}})
+    return rows
 
 
 # ---------------------------------------------------------------------------------------------------- main
@@ -221,34 +246,41 @@ def main(argv=None):
     p.add_argument("--min-sets", type=int, default=25, help="tournament entries a set needs to be analysed")
     p.add_argument("--min-games", type=int, default=150, help="games each arm needs for the validation")
     p.add_argument("--top", type=int, default=25)
+    p.add_argument("--reuse", action="store_true", help="reuse the cached calcs in output/interaction_calcs.csv")
     args = p.parse_args(argv)
-    bench = Bench()
     sets, team_provides = load_sets(args.min_sets)
-    rec = results()
-    print(f"{len(sets)} sets with {args.min_sets}+ entries; benchmark: {len(bench.opp)} most used Pokemon", flush=True)
-    rows = []
-    for (name, item, ability, nature, moves), keys in sets.items():
-        spec = ds.build_spec(name, item, ability, nature, moves)
-        if spec is None:
-            continue
-        base = measure(spec, bench)
-        for cond in CONDITIONS:
-            eff = condition_effect(spec, cond, bench, base)
-            if eff is None:
-                continue
-            # real data: this set on teams where a teammate provides the condition vs where none does
-            with_c = [k for k in keys if any(x != name for x in team_provides[k].get(cond, ()))]
-            without = [k for k in keys if not any(x != name for x in team_provides[k].get(cond, ()))]
-            (yw, gw, nw), (yo, go, no) = above(with_c, rec), above(without, rec)
-            providers = Counter(x for k in with_c for x in team_provides[k][cond] if x != name).most_common(3)
-            rows.append({"set": f"{name} @ {item} / {ability} / {nature}: {', '.join(moves)}", "species": name,
-                         "condition": cond, "score": score(eff), **{f"d_{k}": v for k, v in eff.items()},
-                         "teams_with": nw, "games_with": gw, "above_with": yw, "teams_without": no,
-                         "games_without": go, "above_without": yo,
-                         "real_diff": yw - yo if gw and go else None,
-                         "real_se": 100 * (0.25 / gw + 0.25 / go) ** 0.5 if gw and go else None,
-                         "providers": "; ".join(f"{x} ({c})" for x, c in providers)})
     OUT.mkdir(exist_ok=True)
+    cache = OUT / "interaction_calcs.csv"
+    if args.reuse and cache.exists():
+        calcs = [dict(r, **{k: float(r[k]) for k in r if k == "score" or k.startswith("d_")})
+                 for r in csv.DictReader(open(cache))]
+    else:
+        bench = Bench()
+        print(f"{len(sets)} sets with {args.min_sets}+ entries; benchmark: {len(bench.opp)} most used Pokemon",
+              flush=True)
+        calcs = calc_rows(sets, bench)
+        with open(cache, "w", newline="") as f:
+            out = csv.DictWriter(f, fieldnames=list(calcs[0]))
+            out.writeheader()
+            out.writerows(calcs)
+    rec = results()
+    rows = []
+    for c in calcs:
+        name, cond = c["species"], c["condition"]
+        keys = sets.get((name, c["item"], c["ability"], c["nature"], tuple(c["moves"].split("|"))), [])
+        # this set on teams where a teammate provides the condition vs where none does
+        with_c = [k for k in keys if any(x != name for x in team_provides[k].get(cond, ()))]
+        without = [k for k in keys if not any(x != name for x in team_provides[k].get(cond, ()))]
+        (yw, gw, nw), (yo, go, no) = above(with_c, rec), above(without, rec)
+        providers = Counter(x for k in with_c for x in team_provides[k][cond] if x != name).most_common(3)
+        rows.append({"set": f"{name} @ {c['item']} / {c['ability']} / {c['nature']}: {c['moves'].replace('|', ', ')}",
+                     "species": name, "condition": cond, "score": c["score"],
+                     **{k: c[k] for k in c if k.startswith("d_")},
+                     "teams_with": nw, "games_with": gw, "result_with": yw, "teams_without": no,
+                     "games_without": go, "result_without": yo,
+                     "real_diff": yw - yo if gw and go else None,
+                     "real_se": 100 * (0.25 / gw + 0.25 / go) ** 0.5 if gw and go else None,
+                     "providers": "; ".join(f"{x} ({n})" for x, n in providers)})
     with open(OUT / "interactions.csv", "w", newline="") as f:
         out = csv.DictWriter(f, fieldnames=list(rows[0]))
         out.writeheader()
@@ -269,21 +301,38 @@ def report(rows, args):
         print(f"\nValidation: {len(tested)} set/condition pairs with {args.min_games}+ games with and without a "
               f"provider.\n  correlation of the calc benefit with the real difference (with minus without a "
               f"provider): r = {np.corrcoef(x, y)[0, 1]:+.2f}, weighted by precision {rw:+.2f}")
-        for lo, hi, label in ((-9, 0, "calc says it hurts"), (0, .05, "small benefit"), (.05, 9, "big benefit")):
+        for lo, hi, label in ((-9, 0, "calc says it hurts"), (0, .05, "small benefit"), (.05, .2, "medium benefit"),
+                              (.2, 9, "big benefit")):
             part = [r for r in tested if lo <= r["score"] < hi]
             if part:
                 ww = np.array([1 / r["real_se"] ** 2 for r in part])
                 diff = np.average([r["real_diff"] for r in part], weights=ww)
-                print(f"  {label:20s} {len(part):3d} pairs: real difference {diff:+.1f} ± {1 / np.sqrt(ww.sum()):.1f}")
-    fresh = sorted((r for r in rows if r["teams_with"] < 10 and r["score"] > 0), key=lambda r: -r["score"])
-    print(f"\nStrongest interactions that are rarely played (fewer than 10 teams pair the set with a provider):")
+                print(f"  {label:20s} {len(part):3d} pairs: real difference {diff:+.2f} ± {1 / np.sqrt(ww.sum()):.2f}")
+    specific = ("Sun", "Rain", "Sand", "Snow", "Electric Terrain", "Grassy Terrain", "Psychic Terrain", "Misty Terrain")
+    fresh, seen = [], set()
+    for r in sorted((r for r in rows if r["teams_with"] < 10 and r["score"] > 0 and r["condition"] in specific),
+                    key=lambda r: -r["score"]):
+        if (r["species"], r["condition"]) not in seen:  # the best set per species and condition
+            seen.add((r["species"], r["condition"]))
+            fresh.append(r)
+    print("\nStrongest weather / terrain interactions that are rarely played (fewer than 10 teams pair the set with "
+          "a provider; setup cover, Trick Room, Tailwind and Helping Hand help almost any fitting set, so they're "
+          "left out):")
     for r in fresh[:args.top]:
         print(f"  {r['score']:+.3f}  {r['condition']:16s} ohko {100*r['d_ohko']:+5.1f}  2hko {100*r['d_ko2']:+5.1f}  "
               f"speed {100*r['d_speed']:+5.1f}  survive {100*r['d_survive']:+5.1f}  ({r['teams_with']} teams)  "
               f"{r['set']}")
-    played = sorted((r for r in rows if r["games_with"] >= args.min_games and r["real_diff"] is not None),
+    deps = sorted((r for r in rows if r["teams_with"] >= 30 and r["teams_with"] >= 9 * r["teams_without"]
+                   and r["score"] > 0), key=lambda r: -r["teams_with"])
+    print("\nDependencies: sets played with a provider on 90%+ of their 30+ teams (what players already treat as "
+          "essential):")
+    for r in deps[:15]:
+        print(f"  {r['teams_with']:4d} with / {r['teams_without']:3d} without  calc {r['score']:+.3f}  "
+              f"{r['condition']:16s} {r['set']}  [{r['providers']}]")
+    played = sorted((r for r in rows if r["games_with"] >= args.min_games and r["games_without"] >= args.min_games),
                     key=lambda r: -r["real_diff"])
-    print("\nInteractions that worked best in real tournaments (with vs without a provider):")
+    print(f"\nInteractions that worked best in real tournaments ({args.min_games}+ games both with and without a "
+          "provider; results beyond per-set strengths):")
     for r in played[:12]:
         print(f"  {r['real_diff']:+5.1f} ± {r['real_se']:.1f}  calc {r['score']:+.3f}  {r['condition']:16s} "
               f"{r['teams_with']:4d} vs {r['teams_without']:4d} teams  {r['set']}  [{r['providers']}]")

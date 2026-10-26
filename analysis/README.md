@@ -264,3 +264,27 @@ same-species pairs, two Megas, and two weather setters (the model has no term fo
 
 Treat `sets` as the most reliable output and `suggest` as a source of ideas to check with damage calcs. Results go
 to `output/synergy_sets.csv` and `output/synergy_pairs.csv`.
+
+# Interaction graph
+
+`interactions.py` lists the conditions a partner can create (weather, terrain, Tailwind, Trick Room, Fake Out /
+redirection / priority block as setup cover, Helping Hand, screens, Friend Guard), finds who provides them in real
+sets, and measures with damage calcs what each condition does for each common set: the change in its OHKO and 2HKO
+share, speed order and survival against the most used Pokémon. Seeds with Unburden, Swift Swim and friends, Electro
+Shot in rain and the setup turn a partner's cover buys are all counted, including harmful effects (our own rain
+halving Fire moves). It then compares how each set did on real teams with and without a provider, beyond what the
+teams' per-set strengths predict.
+
+```bash
+python analysis/interactions.py            # calcs (about 40 min, cached) + real data + report
+python analysis/interactions.py --reuse    # reuse the cached calcs (about 1 min)
+```
+
+**Validation (October 2026).** The calc benefit does not predict the real difference: r = −0.02 over 660 set /
+condition pairs with 150+ games both with and without a provider, and the real differences are near zero for every
+condition. The test can only see interactions a set often does without; sets that depend on a partner (Electric Seed
+Sneasler with Mega Raichu X: +9.6 with it, −11 without) are almost never played without it, and their value shows up
+in the set's own strength in `synergy.py sets`. So the report's useful parts are the catalogue of dependencies
+(sets played with a provider on 90%+ of their teams, which recovers Excadrill + sand, Archaludon + rain, Psychic
+Seed Sneasler + Indeedee and the like without being told) and the list of strong mechanical interactions that are
+rarely played, as ideas to test, not predictions. Results go to `output/interactions.csv`.

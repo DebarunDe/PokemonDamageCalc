@@ -222,7 +222,8 @@ class Roster:
 # ---------------------------------------------------------------------------------------------------- data
 
 def load_teams(db, roster):
-    """Teams as (unit indices, wins above skill per game, games, tournament id, date, species indices)."""
+    """Teams as (unit indices, wins above skill per game, games, tournament id, date, species indices,
+    (tournament, player))."""
     skill = player_skill(db).set_index(["tournament", "player"])["skill"].to_dict()
     members, species, record = defaultdict(set), defaultdict(set), {}
     for t, p, mon, item, moves, w, l, date in db.execute(
@@ -238,7 +239,7 @@ def load_teams(db, roster):
         w, l, date = record[key]
         if w + l and key in skill and len(species[key]) >= 4:
             teams.append((sorted(idx), (w - skill[key] * (w + l)) / (w + l), w + l, key[0], date,
-                          sorted(species[key])))
+                          sorted(species[key]), key))
     return teams
 
 
