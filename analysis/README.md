@@ -308,3 +308,22 @@ after their first flag their lift was +2.9 ± 0.3 (82 of 103 positive), against 
 3). Flags keep winning, but at about 40% of the lift that flagged them, so read a flag's lift as an upper bound.
 The early flags included the Mega Floette / Sinistcha / Mega Delphox / Incineroar family that later topped the core
 ranking. Mega Raichu X + Swords Dance Sneasler was flagged on 18 October, the weekend most of its teams appeared.
+
+# Replays (game-level data)
+
+Team sheets only give a registered six and a record. `replays.py` pulls public Showdown replays of the format and
+parses each game into one row per side: team preview, who was brought, who led, which Mega was used, moves used and
+items revealed per species, field conditions each side started (weather, terrain, Tailwind, Trick Room...), length
+and winner. That allows within-team tests: for teams that registered both members of a pair, compare games where
+both were brought (or both led) against games where one stayed home, as wins above the Elo expectation from the two
+ladder ratings.
+
+```bash
+python analysis/replays.py fetch --pages 600        # newest public replays, 51 per page
+python analysis/replays.py parse
+python analysis/replays.py pair Raichu Sneasler --mega Raichu-Mega-X --min-rating 1200
+```
+
+Caveats: these are ladder games, not tournaments (many are low-rated or unrated), and what gets brought depends on
+the opposing team, so a bring split is a hint, not a controlled experiment. Data goes to `analysis/data/replays.sqlite`
+(not committed).
