@@ -1,6 +1,8 @@
 # Archaludon rain, two modes (Pokémon Champions VGC, Regulation M-C)
 # Rain mode: Archaludon + Pelipper + Mega Swampert + Basculegion-F (fast offense, Raichu Y / Floette / Sylveon / mirrors).
-# Second mode: Archaludon + Pelipper + Kingambit + Mega Gengar (Rillaboom, Trick Room, snow / sun / sand).
+# Second mode: Archaludon + Pelipper + Primarina + Mega Gengar (Rillaboom, Trick Room, snow / sun / sand).
+# Primarina replaced Kingambit: it resists the Fighting and Dark hits aimed at Archaludon and Gengar, where
+# Kingambit shared their Ground / Fighting weaknesses. Liquid Voice makes Hyper Voice a rain-boosted Water spread.
 # SPs = Stat Points (max 32 per stat, 66 total). One Mega per game: Swampert in rain mode, Gengar in the second.
 # Swift Swim Speeds in rain: Basculegion-F 260, Mega Swampert 212 (beats the 200-204 tier: Mega Raichu Y,
 # Mega Garchomp-Z, Mega Delphox). Mega Gengar 182 beats Sneasler (172) and Mega Staraptor (178).
@@ -41,13 +43,13 @@ Modest Nature
 - Ice Beam
 - Protect
 
-Kingambit @ Life Orb
-Ability: Defiant
-SPs: 32 HP / 32 Atk / 2 SpD
-Adamant Nature
-- Kowtow Cleave
-- Sucker Punch
-- Swords Dance
+Primarina @ Sitrus Berry
+Ability: Liquid Voice
+SPs: 32 HP / 32 SpA / 2 SpD
+Modest Nature
+- Hyper Voice
+- Moonblast
+- Calm Mind
 - Protect
 
 Gengar @ Gengarite
