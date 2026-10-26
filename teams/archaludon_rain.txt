@@ -1,8 +1,9 @@
 # Archaludon rain, two modes (Pokémon Champions VGC, Regulation M-C)
 # Rain mode: Archaludon + Pelipper + Mega Swampert + Basculegion-F (fast offense, Raichu Y / Floette / Sylveon / mirrors).
-# Second mode: Archaludon + Pelipper + Primarina + Mega Gengar (Rillaboom, Trick Room, snow / sun / sand).
-# Primarina replaced Kingambit: it resists the Fighting and Dark hits aimed at Archaludon and Gengar, where
-# Kingambit shared their Ground / Fighting weaknesses. Liquid Voice makes Hyper Voice a rain-boosted Water spread.
+# Second mode: Archaludon + Pelipper + Gliscor + Mega Gengar (Rillaboom, Trick Room, sun / sand).
+# Gliscor took the slot because it stacks none of the mode's weaknesses (Ground: Archaludon + Gengar,
+# Fighting: Archaludon, Electric / Rock: Pelipper, Psychic / Ghost / Dark: Gengar) and is immune to Ground and
+# Electric. Its own weaknesses are Water (boosted by our rain) and Ice: keep it away from rain and snow teams.
 # SPs = Stat Points (max 32 per stat, 66 total). One Mega per game: Swampert in rain mode, Gengar in the second.
 # Swift Swim Speeds in rain: Basculegion-F 260, Mega Swampert 212 (beats the 200-204 tier: Mega Raichu Y,
 # Mega Garchomp-Z, Mega Delphox). Mega Gengar 182 beats Sneasler (172) and Mega Staraptor (178).
@@ -43,13 +44,13 @@ Modest Nature
 - Ice Beam
 - Protect
 
-Primarina @ Sitrus Berry
-Ability: Liquid Voice
-SPs: 32 HP / 32 SpA / 2 SpD
-Modest Nature
-- Hyper Voice
-- Moonblast
-- Calm Mind
+Gliscor @ Life Orb
+Ability: Hyper Cutter
+SPs: 32 HP / 16 Atk / 18 SpD
+Adamant Nature
+- High Horsepower
+- Dual Wingbeat
+- Tailwind
 - Protect
 
 Gengar @ Gengarite
