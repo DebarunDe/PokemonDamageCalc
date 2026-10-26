@@ -327,3 +327,30 @@ python analysis/replays.py pair Raichu Sneasler --mega Raichu-Mega-X --min-ratin
 Caveats: these are ladder games, not tournaments (many are low-rated or unrated), and what gets brought depends on
 the opposing team, so a bring split is a hint, not a controlled experiment. Data goes to `analysis/data/replays.sqlite`
 (not committed).
+
+# Under-used Pokémon, pairs and cores (`potential.py`)
+
+Two independent sources: tournament team sheets (wins above player skill) and ladder replays (wins above the Elo
+expectation). In each, species effects are fitted first (ridge), then each pair's effect is what its teams do beyond
+their species (a shrunk mean). The two stages matter: fitted jointly, a strong species' effect spreads over its many
+pairs and shows up as fake synergy.
+
+```bash
+python analysis/potential.py                    # all rated ladder games
+python analysis/potential.py --min-rating 1300
+```
+
+What the forward checks say (October 2026 data: 16k tournament teams to 10/19, 53k rated ladder sides 10/16-10/26):
+
+| estimate | earlier -> later events | tournaments -> ladder |
+|---|---|---|
+| species | slope +0.26, r +0.28 | slope +0.45, r +0.52 |
+| pair beyond its species | slope +0.57, r +0.11 | slope +0.61, r +0.09 |
+
+Species effects carry over to independent data; pair synergy mostly does not (and does not agree with the ladder's
+within-team lead test, r about 0). Treat cores as combinations of individually strong Pokémon, not as found synergy.
+
+Replay pitfalls, both handled: only Pokémon that come out are seen, and a winner's back line often never does (sides
+showing 2-3 Pokémon win 76%, all 4 win 43%), so within-team tests use leads, not "brought"; and a Mega's form is
+only seen once it Mega Evolves, so the ladder uses team preview names and only the dominant form of a species (90%+
+of its tournament teams) is compared with its ladder estimate.

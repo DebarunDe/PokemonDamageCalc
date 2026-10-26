@@ -1,12 +1,11 @@
 """Pokemon Showdown replays for game-level data: who was brought, who led, who Mega Evolved, what was used, who won.
 
 Team sheets (meta.sqlite) only say which six a player registered and their record. Replays say what happened in
-each game, so a pairing can be judged within the same teams: games where both were brought against games where one
-stayed home.
+each game, so a pairing can be judged within the same teams: games where both led against games where one did.
 
     python analysis/replays.py fetch --pages 100      # newest public ladder replays of the format
     python analysis/replays.py parse                  # turn logs into one row per side per game
-    python analysis/replays.py pair Raichu Sneasler   # the within-team test for a pair (team preview names)
+    python analysis/replays.py pair Raichu Sneasler   # within-team test for a pair: led together or apart
 
 Replays are stored in analysis/data/replays.sqlite (not committed).
 """
@@ -187,30 +186,29 @@ def expected(r, o):
 
 
 def pair(a, b, min_rating=0, mega=None):
-    """Sides whose team preview has both: wins above their rating expectation when both were brought, only one,
-    or neither; and when both led."""
+    """Sides whose team preview has both: wins above their rating expectation when both led, only one, or neither.
+    Leads, not brought: the back two only show up if they switch in, and a winner's often never do (sides showing
+    2-3 Pokemon win about 76%, sides showing all 4 about 43%), so 'brought' mostly measures losing."""
     db = connect()
-    groups = {"both brought": [], "only " + a: [], "only " + b: [], "neither": [], "both led": []}
-    for rating, opp, won, preview, brought, leads, megas in db.execute(
-            "SELECT rating, opp_rating, won, preview, brought, leads, mega FROM sides"):
-        if (rating or 0) < min_rating:
+    groups = {"both led": [], "only " + a + " led": [], "only " + b + " led": [], "neither led": []}
+    for rating, opp, won, preview, leads, megas in db.execute(
+            "SELECT rating, opp_rating, won, preview, leads, mega FROM sides"):
+        if (rating or 0) < min_rating or not rating or not opp:
             continue
-        preview, brought, leads = json.loads(preview), set(json.loads(brought)), set(json.loads(leads))
-        if a not in preview or b not in preview:
+        preview, leads = json.loads(preview), set(json.loads(leads))
+        if a not in preview or b not in preview or len(leads) < 2:
             continue
-        if mega and mega not in json.loads(megas) and mega.split("-Mega")[0] in brought:
-            continue  # the same species, but not this Mega
-        e = expected(rating, opp)
-        has_a, has_b = a in brought, b in brought
-        key = ("both brought" if has_a and has_b else "only " + a if has_a else "only " + b if has_b else "neither")
-        groups[key].append((won, e))
-        if {a, b} <= leads:
-            groups["both led"].append((won, e))
+        if mega and mega not in json.loads(megas) and mega.split("-Mega")[0] in leads:
+            continue  # the same species led, but not as this Mega
+        has_a, has_b = a in leads, b in leads
+        key = ("both led" if has_a and has_b else "only " + a + " led" if has_a else
+               "only " + b + " led" if has_b else "neither led")
+        groups[key].append((won, expected(rating, opp)))
     print(f"Sides with {a} and {b} in team preview" + (f", rating {min_rating}+" if min_rating else "") + ":")
     for k, g in groups.items():
         if g:
             n, w, e = len(g), sum(x[0] for x in g), sum(x[1] for x in g)
-            print(f"  {k:24s} {n:5d} games  won {100 * w / n:5.1f}%  expected {100 * e / n:5.1f}%  "
+            print(f"  {k:28s} {n:5d} games  won {100 * w / n:5.1f}%  expected {100 * e / n:5.1f}%  "
                   f"above {100 * (w - e) / n:+5.1f} ± {100 * math.sqrt(0.25 / n):.1f}")
 
 

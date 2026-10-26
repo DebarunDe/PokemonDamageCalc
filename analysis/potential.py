@@ -32,6 +32,8 @@ from pathlib import Path
 
 import numpy as np
 
+from replays import base
+
 HERE = Path(__file__).parent
 META, REPLAYS, OUT = HERE / "data" / "meta.sqlite", HERE / "data" / "replays.sqlite", HERE / "output"
 REGULATION = "M-C"
@@ -52,6 +54,13 @@ class Rows:
         self.y.append(y)
         self.g.append(g)
         self.when.append(when)
+
+    def base(self):
+        """The same teams with Megas named by their base species, as the ladder's team preview names them."""
+        out = Rows(self.name)
+        for t, y, g, w in zip(self.teams, self.y, self.g, self.when):
+            out.add([base(s) for s in t], y, g, w)
+        return out
 
     def subset(self, keep, name=None):
         out = Rows(name or self.name)
@@ -80,17 +89,16 @@ def tournaments():
 
 
 def ladder(min_rating=0):
-    """Team preview, with a species named by its Mega form when that Mega was used in the game."""
+    """Team preview names (base species: a Mega's form is only seen if it comes out, which ties it to losing)."""
     from replays import expected
     db = sqlite3.connect(f"file:{REPLAYS}?mode=ro", uri=True, timeout=60)
     rows = Rows("ladder")
-    for when, rating, opp, won, preview, megas in db.execute(
-            "SELECT r.uploadtime, s.rating, s.opp_rating, s.won, s.preview, s.mega FROM sides s "
+    for when, rating, opp, won, preview in db.execute(
+            "SELECT r.uploadtime, s.rating, s.opp_rating, s.won, s.preview FROM sides s "
             "JOIN replays r ON r.id = s.id"):
         if not rating or not opp or min(rating, opp) < min_rating:
             continue
-        mega = {m.split("-Mega")[0]: m for m in json.loads(megas)}
-        mons = [mega.get(p, p) for p in json.loads(preview)]
+        mons = json.loads(preview)
         if len(mons) >= 4:
             day = datetime.fromtimestamp(when, timezone.utc).date().isoformat()
             rows.add(mons, won - expected(rating, opp), 1, day)
@@ -168,7 +176,7 @@ def reliability(tour, lad, cut=CUT):
     for kind, mt, ms in (("species", 300, 300), ("pair", 100, 60)):
         out.append((kind, f"tournaments before {cut} -> after", carry(early, late, kind, mt, ms)))
         if lad.teams:
-            out.append((kind, "all tournaments -> ladder", carry(tour, lad, kind, mt, ms)))
+            out.append((kind, "all tournaments -> ladder", carry(tour.base(), lad, kind, mt, ms)))
     return out
 
 
@@ -179,8 +187,20 @@ def combine(estimates):
     return sum(v * x for (v, _), x in zip(est, w)) / sum(w), sum(w) ** -0.5
 
 
+def ladder_names(ft, share=0.9):
+    """Tournament name -> ladder name (its base species) for the forms the ladder's preview name stands for: the
+    dominant form of a base species, on 90%+ of its tournament teams. Other forms (Raichu X when Raichu is nearly
+    always Y) get no ladder estimate."""
+    by_base = defaultdict(dict)
+    for s, n in ft["species_teams"].items():
+        by_base[base(s)][s] = n
+    return {max(forms, key=forms.get): b for b, forms in by_base.items()
+            if max(forms.values()) >= share * sum(forms.values())}
+
+
 def species_table(ft, fl, min_tour_teams, min_ladder_games):
     rows = []
+    names = ladder_names(ft)
     n_t = ft["n"]
     for s, v in ft["species"].items():
         tt = ft["species_teams"][s]
@@ -188,11 +208,12 @@ def species_table(ft, fl, min_tour_teams, min_ladder_games):
             continue
         gt = ft["species_games"][s]
         t = (v, se(gt, LAM_SPECIES))
-        gl = fl["species_games"].get(s, 0)
-        l = (fl["species"][s], se(gl, LAM_SPECIES)) if gl >= min_ladder_games else (None, None)
+        gl = fl["species_games"].get(names.get(s), 0)  # a Mega is compared with its base species on the ladder
+        l = (fl["species"][names[s]], se(gl, LAM_SPECIES)) if gl >= min_ladder_games else (None, None)
         c, cs = combine([t, l])
-        rows.append({"species": s, "tour_share": tt / n_t, "tour_teams": tt, "tour": 100 * t[0], "tour_se": 100 * t[1],
-                     "ladder_share": fl["species_teams"].get(s, 0) / max(1, fl["n"]), "ladder_games": int(gl),
+        rows.append({"species": s, "tour_share": tt / n_t, "tour_teams": tt, "tour": 100 * t[0],
+                     "tour_se": 100 * t[1], "ladder_games": int(gl),
+                     "ladder_share": fl["species_teams"].get(names.get(s), 0) / max(1, fl["n"]),
                      "ladder": None if l[0] is None else 100 * l[0], "ladder_se": None if l[1] is None else 100 * l[1],
                      "combined": 100 * c, "combined_se": 100 * cs,
                      "agree": l[0] is not None and t[0] > 0 and l[0] > 0})
@@ -202,26 +223,29 @@ def species_table(ft, fl, min_tour_teams, min_ladder_games):
 
 def pair_table(ft, fl, min_tour_teams, min_ladder_games, brings=None):
     rows = []
+    names = ladder_names(ft)
     brings = brings or {}
     for p, v in ft["pair"].items():
         tt = ft["pair_teams"][p]
         if tt < min_tour_teams or ("-Mega" in p[0] and "-Mega" in p[1]):
             continue
         t = (v, se(ft["pair_games"][p], LAM_PAIR))
-        gl = fl["pair_games"].get(p, 0)
-        l = (fl["pair"][p], se(gl, LAM_PAIR)) if gl >= min_ladder_games else (None, None)
+        lp = tuple(sorted((names.get(p[0], "?"), names.get(p[1], "?"))))
+        gl = fl["pair_games"].get(lp, 0)
+        ok = gl >= min_ladder_games
+        l = (fl["pair"][lp], se(gl, LAM_PAIR)) if ok else (None, None)
         c, cs = combine([t, l])
         sums = [ft["species"][p[0]] + ft["species"][p[1]]]
         if l[0] is not None:
-            sums.append(fl["species"].get(p[0], 0.0) + fl["species"].get(p[1], 0.0))
+            sums.append(fl["species"][lp[0]] + fl["species"][lp[1]])
         alone = sum(sums) / len(sums)
         rows.append({"pair": f"{p[0]} / {p[1]}", "a": p[0], "b": p[1], "tour_teams": tt,
                      "tour_share": tt / ft["n"], "tour": 100 * t[0], "tour_se": 100 * t[1], "ladder_games": int(gl),
                      "ladder": None if l[0] is None else 100 * l[0], "ladder_se": None if l[1] is None else 100 * l[1],
                      "synergy": 100 * c, "synergy_se": 100 * cs, "species_sum": 100 * alone,
                      "total": 100 * (alone + c), "agree": l[0] is not None and t[0] > 0 and l[0] > 0,
-                     "bring": 100 * brings[p][0] if p in brings else None,
-                     "bring_se": 100 * brings[p][1] if p in brings else None})
+                     "bring": 100 * brings[lp][0] if ok and lp in brings else None,
+                     "bring_se": 100 * brings[lp][1] if ok and lp in brings else None})
     rows.sort(key=lambda r: -(r["synergy"] - r["synergy_se"]))
     return rows
 
@@ -229,7 +253,8 @@ def pair_table(ft, fl, min_tour_teams, min_ladder_games, brings=None):
 def cores(pairs, ft, fl, top_pairs, n_third=3):
     """For the best pairs, thirds that add the most: the third's species effect plus its pair terms with both."""
     syn = {(r["a"], r["b"]): r["synergy"] / 100 for r in pairs}
-    sp = {s: (ft["species"][s] + fl["species"].get(s, ft["species"][s])) / 2 for s in ft["species"]}
+    names = ladder_names(ft)
+    sp = {s: (ft["species"][s] + fl["species"].get(names.get(s), ft["species"][s])) / 2 for s in ft["species"]}
     out = []
     for r in top_pairs:
         a, b = r["a"], r["b"]
@@ -250,38 +275,31 @@ def cores(pairs, ft, fl, top_pairs, n_third=3):
     return out
 
 
-def bring_pairs(min_rating=0, min_games=40):
+def lead_pairs(min_rating=0, min_games=40):
     """Within-team test on the ladder for every pair: among sides that registered both, results above expectation
-    when both were brought against when only one was. Brings depend on the opponent, so this is a hint with its own
-    bias (different from the team-sheet one), aimed straight at synergy. Pair -> (both - one, se, both games,
-    one games, both-led - one)."""
+    when both led against when only one did. Leads, because the back two are only seen if they switch in, which
+    ties being seen to losing. Leads depend on the opponent, so this is a hint with its own bias (different from the
+    team-sheet one), aimed straight at synergy. Pair -> (both - one, se, both games, one games)."""
     from replays import expected
     db = sqlite3.connect(f"file:{REPLAYS}?mode=ro", uri=True, timeout=60)
-    acc = defaultdict(lambda: [0.0, 0, 0.0, 0, 0.0, 0])  # both, one, led: sums and counts
-    for rating, opp, won, preview, brought, leads, megas in db.execute(
-            "SELECT rating, opp_rating, won, preview, brought, leads, mega FROM sides"):
+    acc = defaultdict(lambda: [0.0, 0, 0.0, 0])  # both led, one led: sums and counts
+    for rating, opp, won, preview, leads in db.execute(
+            "SELECT rating, opp_rating, won, preview, leads FROM sides"):
         if not rating or not opp or min(rating, opp) < min_rating:
             continue
-        mega = {m.split("-Mega")[0]: m for m in json.loads(megas)}
-        name = {p: mega.get(p, p) for p in json.loads(preview)}
-        brought, leads = set(json.loads(brought)), set(json.loads(leads))
+        leads = set(json.loads(leads))
+        if len(leads) < 2:
+            continue
+        name = {p: p for p in json.loads(preview)}
         r = won - expected(rating, opp)
         for a, b in itertools.combinations(sorted(name), 2):
-            k = (a in brought) + (b in brought)
-            if k == 0:
-                continue
-            x = acc[tuple(sorted((name[a], name[b])))]
-            x[0 if k == 2 else 2] += r
-            x[1 if k == 2 else 3] += 1
-            if k == 2 and a in leads and b in leads:
-                x[4] += r
-                x[5] += 1
-    out = {}
-    for p, (sb, nb, so, no, sl, nl) in acc.items():
-        if nb >= min_games and no >= min_games:
-            out[p] = (sb / nb - so / no, (0.25 / nb + 0.25 / no) ** 0.5, nb, no,
-                      sl / nl - so / no if nl >= 20 else None)
-    return out
+            k = (a in leads) + (b in leads)
+            if k:
+                x = acc[tuple(sorted((name[a], name[b])))]
+                x[0 if k == 2 else 2] += r
+                x[1 if k == 2 else 3] += 1
+    return {p: (sb / nb - so / no, (0.25 / nb + 0.25 / no) ** 0.5, nb, no)
+            for p, (sb, nb, so, no) in acc.items() if nb >= min_games and no >= min_games}
 
 
 def write(name, rows):
@@ -310,10 +328,11 @@ def main(argv=None):
         if c:
             print(f"  {kind:8s} {label:36s} slope {c[0]:+.2f} ± {c[1]:.2f}  r {c[2]:+.2f}  ({c[3]} compared)")
     ft, fl = fit(tour), fit(lad)
-    brings = bring_pairs(args.min_rating)
-    shared = {p: v[0] for p, v in brings.items() if ft["pair_games"].get(p, 0) >= 300}
-    r, n = corr({p: ft["pair"][p] for p in shared}, shared)
-    print(f"  pair     tournament synergy vs ladder within-team bring test: r {r:+.2f}  ({n} compared)")
+    brings = lead_pairs(args.min_rating)
+    fb = fit(tour.base())
+    shared = {p: v[0] for p, v in brings.items() if fb["pair_games"].get(p, 0) >= 300}
+    r, n = corr({p: fb["pair"][p] for p in shared}, shared)
+    print(f"  pair     tournament synergy vs ladder within-team lead test: r {r:+.2f}  ({n} compared)")
 
     sp = species_table(ft, fl, min_tour_teams=30, min_ladder_games=100)
     write("species", sp)
@@ -331,8 +350,8 @@ def main(argv=None):
     rare_pairs = [r for r in pr if r["tour_share"] <= args.max_share / 5 and r["total"] > 0]
     print(f"\n3. Under-used pairs (on <= {20 * args.max_share:.0f}% of tournament teams) by surest synergy "
           "(beyond both species), with total = both species + synergy:")
-    print("  (bring = ladder sides with both registered: both brought vs only one)")
-    print(f"  {'tournaments':>12} {'ladder':>12} {'synergy':>12} {'total':>6} teams  both+ {'bring':>12}  pair")
+    print("  (lead = ladder sides with both registered: both led vs only one led)")
+    print(f"  {'tournaments':>12} {'ladder':>12} {'synergy':>12} {'total':>6} teams  both+ {'lead':>12}  pair")
     for r in rare_pairs[:args.top]:
         print(f"  {fmt(r['tour'], r['tour_se'])} {fmt(r['ladder'], r['ladder_se'])} "
               f"{fmt(r['synergy'], r['synergy_se'])} {r['total']:+6.1f} {r['tour_teams']:5d}  "
