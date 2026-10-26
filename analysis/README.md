@@ -288,3 +288,23 @@ in the set's own strength in `synergy.py sets`. So the report's useful parts are
 (sets played with a provider on 90%+ of their teams, which recovers Excadrill + sand, Archaludon + rain, Psychic
 Seed Sneasler + Indeedee and the like without being told) and the list of strong mechanical interactions that are
 rarely played, as ideas to test, not predictions. Results go to `output/interactions.csv`.
+
+# Emerging-set detector
+
+`emerging.py` flags set choices (a species' item, moves or ability, alone or with a given teammate) and species
+pairs that are still rare but have started winning. The signal is the lift: wins per game above player skill for
+teams making the choice, minus the rest of its species (or set choice). A flag needs, in the recent window (14
+days by default), a lift z-score of 3+, 12+ players over 5+ events with no player behind more than 30% of the teams,
+a positive lift in both random halves of the events, and at most 30% of the parent's teams. Choices nearly every
+copy of a species makes (80%+) count as part of the species, and choices picking out the same teams are merged.
+
+```bash
+python analysis/emerging.py                     # flags as of the latest event
+python analysis/emerging.py --backtest          # run every 3 days on past data, check each flag a week later
+```
+
+**Backtest (October 2026).** 103 distinct choices were flagged between 26 September and 13 October; over the week
+after their first flag their lift was +2.9 ± 0.3 (82 of 103 positive), against +2.0 ± 0.1 for near-misses (z 1.5 to
+3). Flags keep winning, but at about 40% of the lift that flagged them, so read a flag's lift as an upper bound.
+The early flags included the Mega Floette / Sinistcha / Mega Delphox / Incineroar family that later topped the core
+ranking. Mega Raichu X + Swords Dance Sneasler was flagged on 18 October, the weekend most of its teams appeared.
