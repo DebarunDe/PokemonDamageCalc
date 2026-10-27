@@ -4,6 +4,8 @@
 # Venusaur (Life Orb set: +4.9 on 219 teams) resists the Fighting / Electric aimed at Archaludon and Pelipper,
 # takes Water and Ice well, and Leaf Storm covers opposing Mega Swampert / Basculegion, the gap both modes had.
 # Its one stacked weakness is Psychic, shared with Gengar: Psychic spam + Trick Room is this team's weak spot.
+# Seed Sneasler (344 Speed on entry) + Rillaboom beats rain mode: bring the second mode and lead Venusaur +
+# Mega Gengar. Gengar's Psychic OHKOs every Sneasler (183%+ at +1 Def), and both OHKO Rillaboom with Sludge Bomb.
 # SPs = Stat Points (max 32 per stat, 66 total). One Mega per game: Swampert in rain mode, Gengar in the second.
 # Swift Swim Speeds in rain: Basculegion-F 260, Mega Swampert 212 (beats the 200-204 tier: Mega Raichu Y,
 # Mega Garchomp-Z, Mega Delphox). Mega Gengar 182 beats Sneasler (172) and Mega Staraptor (178).
@@ -59,5 +61,5 @@ SPs: 32 HP / 2 SpA / 32 Spe
 Modest Nature
 - Shadow Ball
 - Sludge Bomb
-- Focus Blast
+- Psychic
 - Protect
