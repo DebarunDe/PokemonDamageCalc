@@ -123,8 +123,8 @@ def validate(n=30):
                     for th in (50, 70) for sf in (30, 40, 50)}
             out.append((grid, resid, g))
         print(f"\n{label}: {len(out)} teams; result above expectation beyond the Pokemon's individual strengths")
-        print("  correlation of switch-in coverage with that result (threat cut / safe cut), and the slope in points per "
-              "game for a 0 -> 1 change in coverage:")
+        print("  correlation of switch-in coverage with that result (threat cut / safe cut), and the slope in "
+              "points per game for a 0 -> 1 change in coverage:")
         g = np.array([o[2] for o in out], dtype=float)
         r = np.array([o[1] for o in out])
         for key in out[0][0]:
@@ -164,6 +164,9 @@ def validate(n=30):
 
 # ------------------------------------------------------------------------------------------------- one team
 
+STATS = {"HP": "hp", "Atk": "atk", "Def": "def", "SpA": "spa", "SpD": "spd", "Spe": "spe"}
+
+
 def parse_paste(text):
     """Showdown-format team text -> list of Specs (SPs line for stat points)."""
     out = []
@@ -182,13 +185,14 @@ def parse_paste(text):
             elif x.startswith(("SPs:", "EVs:")):
                 for part in x.split(":", 1)[1].split("/"):
                     v, stat = part.split()
-                    sp[{"HP": "hp", "Atk": "atk", "Def": "def", "SpA": "spa", "SpD": "spd", "Spe": "spe"}[stat]] = int(v)
+                    sp[STATS[stat]] = int(v)
             elif x.startswith("- "):
                 moves.append(x[2:].strip())
         form = next((f for f in ds.calc.species(name)["other_formes"]
                      if item and (ds.calc.species(f)["mega_stone"] or "").lower() == item.lower()), None)
         if form:  # holding its Mega Stone: score the Mega form
-            out.append(ds.Spec(form, ds.calc.species(form)["abilities"][0], item, nature, sp, moves, pre_ability=ability))
+            ability_mega = ds.calc.species(form)["abilities"][0]
+            out.append(ds.Spec(form, ability_mega, item, nature, sp, moves, pre_ability=ability))
         else:
             out.append(ds.Spec(name, ability, item, nature, sp, moves))
     return out
