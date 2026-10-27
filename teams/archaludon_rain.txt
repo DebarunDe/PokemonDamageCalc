@@ -1,14 +1,11 @@
-# Archaludon rain, two modes (Pokémon Champions VGC, Regulation M-C)
-# Rain mode: Archaludon + Pelipper + Mega Swampert + Basculegion-F (fast offense, Raichu Y / Floette / Sylveon / mirrors).
-# Second mode: Archaludon + Pelipper + Venusaur + Mega Gengar (Rillaboom, Trick Room, sun / sand / snow).
-# Venusaur (Life Orb set: +4.9 on 219 teams) resists the Fighting / Electric aimed at Archaludon and Pelipper,
-# takes Water and Ice well, and Leaf Storm covers opposing Mega Swampert / Basculegion, the gap both modes had.
-# Its one stacked weakness is Psychic, shared with Gengar: Psychic spam + Trick Room is this team's weak spot.
-# Seed Sneasler (344 Speed on entry) + Rillaboom beats rain mode: bring the second mode and lead Venusaur +
-# Mega Gengar. Gengar's Psychic OHKOs every Sneasler (183%+ at +1 Def), and both OHKO Rillaboom with Sludge Bomb.
-# SPs = Stat Points (max 32 per stat, 66 total). One Mega per game: Swampert in rain mode, Gengar in the second.
-# Swift Swim Speeds in rain: Basculegion-F 260, Mega Swampert 212 (beats the 200-204 tier: Mega Raichu Y,
-# Mega Garchomp-Z, Mega Delphox). Mega Gengar 182 beats Sneasler (172) and Mega Staraptor (178).
+# Archaludon rain, Raichu X version (Pokémon Champions VGC, Regulation M-C)
+# The proven archetype: teams with exactly these six were +11.2 ± 2.8 wins per 100 games above player skill
+# (43 tournament teams, 38 players). Pre-swap versions of this file (Swampert / Venusaur / Gengar) are in git history.
+# Mode A, Raichu X + Sneasler lead: Mega Evolution sets Electric Terrain, Sneasler's Electric Seed triggers turn 1
+#   (+1 Def, Unburden: 280 Speed), Electro Shot gets 1.3x. Archaludon + Pelipper + Basculegion-F in the back.
+# Mode B, Golisopod rain: Pelipper + Basculegion-F lead (best ladder lead, +10.8 ± 2.7), Mega Golisopod and
+#   Archaludon in the back. Leave Sneasler home in this mode: without Electric Terrain its seed never triggers.
+# SPs = Stat Points (max 32 per stat, 66 total). One Mega per game.
 
 Archaludon @ Leftovers
 Ability: Stamina
@@ -16,7 +13,7 @@ SPs: 32 HP / 2 SpA / 32 SpD
 Bold Nature
 - Electro Shot
 - Dragon Pulse
-- Snarl
+- Aura Sphere
 - Protect
 
 Pelipper @ Damp Rock
@@ -28,15 +25,6 @@ Bold Nature
 - Helping Hand
 - Wide Guard
 
-Swampert @ Swampertite
-Ability: Torrent
-SPs: 18 HP / 32 Atk / 16 Spe
-Adamant Nature
-- Wave Crash
-- High Horsepower
-- Ice Punch
-- Protect
-
 Basculegion-F @ Focus Sash
 Ability: Swift Swim
 SPs: 2 HP / 32 SpA / 32 Spe
@@ -46,20 +34,29 @@ Modest Nature
 - Ice Beam
 - Protect
 
-Venusaur @ Life Orb
-Ability: Chlorophyll
-SPs: 32 HP / 32 SpA / 2 SpD
-Modest Nature
-- Leaf Storm
-- Sludge Bomb
-- Earth Power
+Raichu @ Raichunite X
+Ability: Lightning Rod
+SPs: 32 HP / 2 Atk / 32 Spe
+Jolly Nature
+- Fake Out
+- Volt Tackle
+- Volt Switch
 - Protect
 
-Gengar @ Gengarite
-Ability: Cursed Body
-SPs: 32 HP / 2 SpA / 32 Spe
-Modest Nature
-- Shadow Ball
-- Sludge Bomb
-- Psychic
+Sneasler @ Electric Seed
+Ability: Unburden
+SPs: 32 HP / 32 Atk / 2 SpD
+Adamant Nature
+- Close Combat
+- Dire Claw
+- Swords Dance
+- Protect
+
+Golisopod @ Golisopite
+Ability: Emergency Exit
+SPs: 32 HP / 32 Atk / 2 SpD
+Adamant Nature
+- Leech Life
+- Iron Head
+- Sucker Punch
 - Protect
