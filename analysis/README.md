@@ -361,3 +361,20 @@ played in tournaments); the interaction graph's calc benefit r −0.01 over 1,22
 condition clearly better than chance (Tailwind r +0.10 is the best of 13). Even the plain tournament pair effect
 only reaches r +0.07: pair synergy beyond the two members' own strength is too small in this format to find or
 confirm from results, so the generators' ideas are untested hypotheses at best.
+
+# Switch-in coverage (`switching.py`)
+
+The team tools score each Pokémon on its own and never ask who comes in when a member is threatened. `switching.py`
+does: for the damaging moves of the 30 most used Pokémon (real sets, weighted by usage), each attack that does 50%+ to
+a member is covered if a teammate takes under 40% from it (40-60% counts half); a team's score is the weighted share
+covered. Doubles calcs, no weather, each species' most common tournament set.
+
+```bash
+python analysis/switching.py validate        # does coverage predict results beyond the Pokémon's own strengths?
+python analysis/switching.py team teams/archaludon_rain.txt --members Archaludon Pelipper Kingambit Gengar
+```
+
+**Validation (October 2026).** Slope of results (beyond the Pokémon's individual strengths) on coverage, with copies
+of the same team resampled together: tournaments +5.6 ± 2.9, ladder +5.3 ± 4.2 points per game for 0 -> 1 coverage,
+together about +5.5 ± 2.4. Real but small: teams differ by about 0.065 in coverage, about 0.35 points per game, against
+1-2 points for picking a strong Pokémon. Use it to break ties between similar candidates, not to drive the search.
