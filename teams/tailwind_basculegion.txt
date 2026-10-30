@@ -1,0 +1,62 @@
+# Whimsicott Tailwind + Basculegion (Pokémon Champions VGC, Regulation M-C), a non-rain team on the rise
+# This exact six: +7.7 ± 2.0 wins per 100 games above player skill in tournaments (101 teams, 84 players) and
+# +10.6 ± 3.0 on the ladder (275 games, 119 players). Basculegion + Whimsicott teams went from 1.7% to 4.5% of
+# teams and from +0.8 to +6.2 between September and late October; +4.6 ± 3.0 against Archaludon + Pelipper rain.
+# Best ladder leads: Garchomp + Whimsicott (+18.6 ± 4.8), Basculegion + Whimsicott (+13.8 ± 4.5),
+#   Mega Charizard Y + Garchomp (+20.3 ± 6.3). Avoid leading Basculegion + Garchomp (-10.9 ± 3.7).
+# Sets are the most common real ones; spreads are the most common ladder spreads (not yet calc-tuned).
+# SPs = Stat Points (max 32 per stat, 66 total).
+
+Whimsicott @ Focus Sash
+Ability: Prankster
+SPs: 2 HP / 32 SpA / 32 Spe
+Timid Nature
+- Tailwind
+- Encore
+- Moonblast
+- Protect
+
+Basculegion @ Mystic Water
+Ability: Adaptability
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Wave Crash
+- Last Respects
+- Aqua Jet
+- Protect
+
+Charizard @ Charizardite Y
+Ability: Blaze
+SPs: 8 HP / 32 SpA / 26 Spe
+Modest Nature
+- Heat Wave
+- Weather Ball
+- Solar Beam
+- Protect
+
+Garchomp @ Life Orb
+Ability: Rough Skin
+SPs: 2 HP / 32 Atk / 32 Spe
+Jolly Nature
+- Dragon Claw
+- Earthquake
+- Rock Slide
+- Protect
+
+Kingambit @ Chople Berry
+Ability: Defiant
+SPs: 32 HP / 32 Atk / 2 SpD
+Adamant Nature
+- Kowtow Cleave
+- Sucker Punch
+- Iron Head
+- Low Kick
+
+Sneasler @ White Herb
+Ability: Unburden
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Close Combat
+- Dire Claw
+- Rock Tomb
+- Protect
