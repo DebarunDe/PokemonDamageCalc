@@ -5,8 +5,14 @@ Every combination is resolved with real damage calcs and turn-1 mechanics: prior
 friends in their weather, Unburden after a terrain seed), weather and terrain from lead and Mega abilities (the slower
 setter's wins, Megas after leads), Intimidate (Defiant / Competitive answer it), Fake Out flinch, Protect, Sucker
 Punch needing an attacking target, Psychic Terrain blocking priority into grounded targets, single-target moves
-retargeting when their target faints. Payoff = damage dealt minus damage taken, + 0.5 per KO. The game's value under
-optimal mixed play is the lead matchup's predicted edge. Status moves other than Protect / Fake Out are not modelled.
+retargeting when their target faints, Focus Sash / Sturdy. Payoff = damage dealt minus damage taken, + 0.5 per KO.
+The game's value under optimal mixed play is the lead matchup's predicted edge. Status moves other than Protect / Fake Out are not modelled, nor is switching.
+
+First validation (2026-11, 1,947 random ladder games): predicted vs logged turn-1 KO difference r +0.10; lead value
+vs result r +0.06, +4.9 ± 1.8 points per game per unit beyond the leads' individual strength (the actual turn-1 KO
+difference correlates +0.23 with results, so the model captures about a quarter of what turn 1 is worth). It is
+overconfident: where it predicts a +0.5 KO edge or more, the logged edge is about +0.1 (switching, redirection and
+speed control, which it leaves out).
 
 Validation against ladder replays (python analysis/leads.py validate):
     1. turn-1 faints: do the model's expected KOs match the faints logged before turn 2?
@@ -156,7 +162,7 @@ def resolve(a, b, act_a, act_b, weather, terrain):
     """One turn. Returns (payoff to side a, expected KOs by a, expected KOs by b)."""
     sides = (a, b)
     hp = [[100.0, 100.0], [100.0, 100.0]]
-    protected, flinched, moved = set(), set(), set()
+    protected, flinched, moved, sashed = set(), set(), set(), set()
     order = []
     for si, acts in enumerate((act_a, act_b)):
         for i, act in enumerate(acts):
@@ -202,6 +208,10 @@ def resolve(a, b, act_a, act_b, weather, terrain):
                 if act[1] == "Sucker Punch" and ((oi, t) in moved or acts_of[(oi, t)][0] != "move"):
                     continue
                 dmg = damage(me, i, other, t, [act[1]], weather, terrain)[0]
+            if hp[oi][t] >= 100 and dmg >= 100 and (oi, t) not in sashed and (
+                    other.specs[t].item == "Focus Sash" or other.specs[t].ability == "Sturdy"):
+                sashed.add((oi, t))
+                dmg = 99.5  # Focus Sash / Sturdy: survives a KO from full HP once
             hp[oi][t] -= dmg
     lost = [[max(0.0, 100 - max(h, 0.0)) / 100 + (KO_BONUS if h <= 0 else 0.0) for h in hp[s]] for s in (0, 1)]
     kos = [sum(1 for h in hp[s] if h <= 0) for s in (0, 1)]
