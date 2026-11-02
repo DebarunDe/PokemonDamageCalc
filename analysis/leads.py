@@ -6,7 +6,8 @@ friends in their weather, Unburden after a terrain seed), weather and terrain fr
 setter's wins, Megas after leads), Intimidate (Defiant / Competitive answer it), Fake Out flinch, Protect, Sucker
 Punch needing an attacking target, Psychic Terrain blocking priority into grounded targets, single-target moves
 retargeting when their target faints, Focus Sash / Sturdy. Payoff = damage dealt minus damage taken, + 0.5 per KO.
-The game's value under optimal mixed play is the lead matchup's predicted edge. Status moves other than Protect / Fake Out are not modelled, nor is switching.
+The game's value under optimal mixed play is the lead matchup's predicted edge. Status moves other than Protect /
+Fake Out are not modelled, nor is switching.
 
 First validation (2026-11, 1,947 random ladder games): predicted vs logged turn-1 KO difference r +0.10; lead value
 vs result r +0.06, +4.9 ± 1.8 points per game per unit beyond the leads' individual strength (the actual turn-1 KO
