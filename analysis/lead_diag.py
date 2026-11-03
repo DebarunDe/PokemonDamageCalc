@@ -36,7 +36,8 @@ KINDS = ["attack", "Protect", "Fake Out", "Tailwind", "Trick Room", "setup", "re
          "Helping Hand", "other status", "switch"]
 ACTION_KIND = {"fake": "Fake Out", "protect": "Protect", "tailwind": "Tailwind", "trickroom": "Trick Room",
                "setup": "setup", "redirect": "redirect", "wideguard": "Wide Guard", "helping": "Helping Hand",
-               "switch": "switch", "move": "attack", "pass": "other status"}
+               "switch": "switch", "move": "attack", "pass": "other status",
+               "status": "other status"}
 
 
 def move_kind(m):
@@ -122,10 +123,12 @@ def main(argv=None):
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--horizon", type=int, default=ld.HORIZON)
     p.add_argument("--turn2", type=float, default=ld.TURN2)
+    p.add_argument("--switch-cost", type=float, default=ld.SWITCH_COST)
+    p.add_argument("--seed", type=int, default=0)
     args = p.parse_args(argv)
-    ld.TURN2, ld.HORIZON = args.turn2, args.horizon
+    ld.TURN2, ld.HORIZON, ld.SWITCH_COST = args.turn2, args.horizon, args.switch_cost
     from replays import base
-    db, sides, jobs = ld.load_games(args.games, revealed=args.revealed)
+    db, sides, jobs = ld.load_games(args.games, seed=args.seed, revealed=args.revealed)
     args_of = dict(jobs)
     pred, act, n_obs = Counter(), Counter(), 0
     by_species = defaultdict(lambda: [Counter(), Counter(), 0])

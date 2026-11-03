@@ -133,3 +133,40 @@ def test_longer_horizon_and_tailwind_expiry(monkeypatch):
     assert play(4, 2) == pytest.approx(0.6 - 1.5)  # Tailwind over after turn 3: B1 first again on turn 4
     assert play(2, 3) == pytest.approx(0.3 - 0.6)  # two turns: A1 at 40%, B1 at 70%
     leads.attack_moves.cache_clear()
+
+
+def test_status_moves_and_switch_cost(monkeypatch):
+    monkeypatch.setattr(leads, "damage", lambda me, i, other, j, moves, w, tr: [10.0 if moves == ["Fake Out"] else
+                                                                               40.0 for _ in moves])
+    status = {"Encore", "Taunt", "Spore", "Trick Room", "Fake Out"}
+    monkeypatch.setattr(leads, "move_info", lambda m: {"priority": 3 if m == "Fake Out" else 0, "spread": False,
+                                                       "accuracy": True,
+                                                       "category": "Status" if m in status else "Physical"})
+    monkeypatch.setattr(leads, "TURN2", 1.0)
+    monkeypatch.setattr(leads, "HORIZON", 2)
+    leads.attack_moves.cache_clear()
+
+    def mk(name, speed, moves, ability=None, types=("Normal",)):
+        return Mon(name=name, speed=speed, types=types, ability=ability, item=None, moves=moves, pre_ability=ability)
+    a = leads.Side([mk("A1", 50, ["Encore", "Taunt", "Spore"], "Prankster"), mk("A2", 1, [])])
+    b = leads.Side([mk("B1", 90, ["Fake Out", "Hit", "Trick Room"]), mk("B2", 1, [])])
+    fake = [("fake", 1), ("pass",)]  # B1 Fake Outs A2 (10%)
+    # without Encore B1 hits A1 on turn 2 (40%); Encored into Fake Out it does nothing on turn 2
+    plain = leads.resolve(a, b, [("pass",), ("pass",)], fake, None, None)[0]
+    encored = leads.resolve(a, b, [("status", "Encore", 0), ("pass",)], fake, None, None)[0]
+    assert plain == pytest.approx(-0.10 - 0.40) and encored == pytest.approx(-0.10)
+    # Spore (Prankster: before B1's attack): B1 sleeps through turn 1 and turn 2
+    hit = [("move", "Hit", 0), ("pass",)]
+    assert leads.resolve(a, b, [("status", "Spore", 0), ("pass",)], hit, None, None)[0] == pytest.approx(0.0)
+    # Taunt (Prankster) stops B1's Trick Room
+    sides = []
+    monkeypatch.setattr(leads, "turn2", lambda sd, occ, hp, delta, tw, tr, *rest: sides.append(tr) or occ)
+    leads.resolve(a, b, [("status", "Taunt", 0), ("pass",)], [("trickroom",), ("pass",)], None, None)
+    leads.resolve(a, b, [("pass",), ("pass",)], [("trickroom",), ("pass",)], None, None)
+    assert sides == [False, True]
+    monkeypatch.setattr(leads, "TURN2", 0.0)
+    monkeypatch.setattr(leads, "SWITCH_COST", 0.2)
+    c = leads.Side([mk("C1", 50, []), mk("C2", 50, []), mk("C3", 50, [])])
+    assert leads.resolve(c, b, [("switch", 2), ("pass",)], [("pass",), ("pass",)], None, None)[0] == \
+        pytest.approx(-0.2)
+    leads.attack_moves.cache_clear()

@@ -70,6 +70,8 @@ KO_BONUS = 0.5
 TOP_MOVES = 3  # damaging actions kept per Pokemon (by damage), besides Protect and Fake Out
 TURN2 = 1.0  # weight of turn 2 (played greedily from the state turn 1 leaves) in the payoff; 0 = one-turn model
 HORIZON = 2  # turns in all: turn 1 solved as a game, turns 2.. played greedily; turn t weighs TURN2 ** (t - 1)
+SWITCH_COST = 0.0  # payoff charged per turn-1 switch (tempo the model can't see otherwise); see lead_diag
+STATUS_MOVES = {"Encore", "Parting Shot", "Spore", "Sleep Powder", "Taunt", "Will-O-Wisp", "Thunder Wave"}
 TAILWIND_TURNS, TRICK_ROOM_TURNS = 3, 4  # turns of effect after the turn it is set (4 and 5 counting that turn)
 SETUP = {"Swords Dance": {"atk": 2}, "Nasty Plot": {"spa": 2}, "Dragon Dance": {"atk": 1, "spe": 1},
          "Calm Mind": {"spa": 1, "spd": 1}, "Quiver Dance": {"spa": 1, "spd": 1, "spe": 1},
@@ -199,6 +201,7 @@ def actions(side, i, other, weather, terrain):
         if "Trick Room" in s.moves:
             out.append(("trickroom",))
         out += [("setup", m) for m in s.moves if m in SETUP]
+        out += [("status", m, t) for m in s.moves if m in STATUS_MOVES for t in (0, 1)]
     if "Fake Out" in s.moves:
         out += [("fake", 0), ("fake", 1)]
     if PROTECT & set(s.moves):
@@ -214,8 +217,70 @@ def actions(side, i, other, weather, terrain):
 
 
 PRIORITY = {"helping": 5, "protect": 4, "wideguard": 3, "fake": 3, "redirect": 2, "tailwind": 0, "setup": 0,
-            "trickroom": -7}
-STATUS = {"helping", "protect", "wideguard", "redirect", "tailwind", "setup", "trickroom"}
+            "trickroom": -7, "status": 0}
+STATUS = {"helping", "protect", "wideguard", "redirect", "tailwind", "setup", "trickroom", "status"}
+
+
+def _act_mult(cond, si, k, move):
+    """Expected share of a Pokemon's damage that lands given its status: asleep (probability), fully paralysed
+    (25% of turns), burned (physical damage halved)."""
+    c = cond.get((si, k))
+    if not c:
+        return 1.0
+    m = (1 - c.get("sleep", 0.0) if c.get("sleep_turns", 0) > 0 else 1.0) * (1 - 0.25 * c.get("para", 0.0))
+    info = move_info(move)
+    if info and info["category"] == "Physical":
+        m *= 1 - 0.5 * c.get("burn", 0.0)
+    return m
+
+
+def _end_of_turn(cond, hp):
+    for (si, k), c in cond.items():
+        if c.get("burn") and hp[si][k] > 0:
+            hp[si][k] -= 6.25 * c["burn"]
+        for key in ("sleep_turns", "locked", "taunt"):
+            if c.get(key):
+                c[key] -= 1
+
+
+def _status(cond, delta, sides, occ, hp, si, slot, oi, t, j, move, moved, acts, terrain):
+    """A status move from (si, slot) landing on roster j of side oi (in slot t). Updates cond / delta / occ."""
+    user, tgt = sides[si].specs[slot], sides[oi].specs[j]
+    if user.ability == "Prankster" and "Dark" in tgt.types:
+        return
+    acc = move_info(move)["accuracy"]
+    acc = 1.0 if acc is True else acc / 100
+    c = cond.setdefault((oi, j), {})
+    has_status = c.get("burn") or c.get("para") or c.get("sleep_turns")
+    if move == "Encore":
+        if (oi, t) in moved and j == t and acts[oi][t][0] != "move":
+            c["locked"] = 4  # the rest of this turn and three more: its turn-1 move was Fake Out / Protect / status
+    elif move == "Taunt":
+        c["taunt"] = 4
+    elif move == "Parting Shot":
+        if tgt.ability not in ("Clear Body", "White Smoke", "Full Metal Body"):
+            d = delta[oi][j]
+            d["atk"], d["spa"] = d.get("atk", 0) - 1, d.get("spa", 0) - 1
+            if tgt.ability == "Defiant":
+                d["atk"] += 2
+            elif tgt.ability == "Competitive":
+                d["spa"] += 2
+        spare = [k for k in range(len(sides[si].specs)) if k not in occ[si] and hp[si][k] > 0]
+        if spare:
+            occ[si][slot] = spare[0]
+    elif has_status:
+        return
+    elif move in ("Spore", "Sleep Powder"):
+        if "Grass" in tgt.types or tgt.ability == "Overcoat" or tgt.item == "Safety Goggles" or (
+                terrain in ("Electric", "Misty") and grounded(tgt)):
+            return
+        c["sleep"], c["sleep_turns"] = acc, 3
+    elif move == "Will-O-Wisp":
+        if "Fire" not in tgt.types:
+            c["burn"] = acc
+    elif move == "Thunder Wave":
+        if "Ground" not in tgt.types and "Electric" not in tgt.types:
+            c["para"] = acc
 
 
 def stage(n):
@@ -254,7 +319,7 @@ def attack_moves(spec):
             and m not in ("Fake Out", "First Impression")]
 
 
-def turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain):
+def turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain, cond=None):
     """A later turn, greedy: fainted Pokemon are replaced from the back, then every active Pokemon uses the move and
     target worth the most damage (+ KO bonus) given the boosts, drops, Tailwind and Trick Room in effect. Updates hp
     and delta (stat drops); returns the field occupants after the turn."""
@@ -276,6 +341,8 @@ def turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain)
         for slot in (0, 1):
             k = occ[si][slot]
             moves = attack_moves(now[si].specs[k]) if k is not None else []
+            if cond and cond.get((si, k), {}).get("locked"):
+                moves = []  # Encored into Fake Out / Protect / a status move
             if not moves or not targets:
                 continue
             dmg = {j: damage(now[si], k, now[oi], j, moves, weather, terrain) for j in targets}
@@ -288,6 +355,8 @@ def turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain)
                     if best is None or v > best[0]:
                         best = (v, m, j)
             spe = sides[si].speed[k] * stage(delta[si][k].get("spe", 0)) * (2 if si in tailwind else 1)
+            if cond and cond.get((si, k), {}).get("para", 0) >= 0.9:
+                spe /= 2
             order.append((move_info(best[1])["priority"], -spe if trick_room else spe, si, k, best[1], best[2]))
     order.sort(key=lambda x: (-x[0], -x[1]))
     for _, _, si, k, m, j in order:
@@ -299,9 +368,13 @@ def turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain)
             j = alive[0] if alive else None
         for t in (alive if j is None and move_info(m)["spread"] else [j] if j is not None else []):
             d = damage(now[si], k, now[oi], t, [m], weather, terrain)[0]
+            if cond:
+                d *= _act_mult(cond, si, k, m)
             _hit(hp, sashed, now[oi], oi, t, d)
             if m in DROPS and hp[oi][t] > 0 and d > 0:
                 _drop(delta, now[oi], oi, t, m)
+    if cond:
+        _end_of_turn(cond, hp)
     return occ
 
 
@@ -319,6 +392,7 @@ def resolve(a, b, act_a, act_b, weather, terrain):
     wide, redirect, helped = set(), {}, set()
     delta = [[{} for _ in sd.specs] for sd in sides]
     tailwind, trick_room = set(), False
+    cond = {}
     order = []
     for si in (0, 1):
         for slot, act in enumerate(acts[si]):
@@ -334,8 +408,11 @@ def resolve(a, b, act_a, act_b, weather, terrain):
     order.sort(key=lambda x: (-x[0], -x[1]))
     for pri, _, si, slot, act in order:
         moved.add((si, slot))
-        if hp[si][slot] <= 0 or (si, slot) in flinched:
+        if hp[si][slot] <= 0 or (si, slot) in flinched or occ[si][slot] != slot:
             continue
+        c = cond.get((si, slot), {})
+        if act[0] in STATUS and (c.get("taunt") and act[0] != "protect" or c.get("sleep", 0) >= 0.99):
+            continue  # Taunted before using a status move (Protect excepted here), or asleep from Spore
         if act[0] == "protect":
             protected.add((si, slot))
             continue
@@ -361,7 +438,7 @@ def resolve(a, b, act_a, act_b, weather, terrain):
         oi = 1 - si
         me, other = sides[si], sides[oi]
         alive = [t for t in (0, 1) if hp[oi][occ[oi][t]] > 0]
-        if act[0] == "fake" or act[2] is not None:
+        if act[0] in ("fake", "status") or act[2] is not None:
             t = act[1] if act[0] == "fake" else act[2]
             r = redirect.get(oi)
             if r is not None and r in alive:
@@ -379,6 +456,9 @@ def resolve(a, b, act_a, act_b, weather, terrain):
                 continue
             if pri > 0 and terrain == "Psychic" and grounded(other.specs[j]):
                 continue
+            if act[0] == "status":
+                _status(cond, delta, sides, occ, hp, si, slot, oi, t, j, act[1], moved, acts, terrain)
+                continue
             if act[0] == "fake":
                 dmg = damage(me, slot, other, j, ["Fake Out"], weather, terrain)[0]
                 if (oi, t) not in moved:
@@ -390,20 +470,23 @@ def resolve(a, b, act_a, act_b, weather, terrain):
                 dmg = damage(me, slot, other, j, [act[1]], weather, terrain)[0]
             if (si, slot) in helped:
                 dmg *= 1.5
+            dmg *= _act_mult(cond, si, slot, "Fake Out" if act[0] == "fake" else act[1])
             _hit(hp, sashed, other, oi, j, dmg)
             if act[0] == "move" and act[1] in DROPS and hp[oi][j] > 0 and dmg > 0:
                 _drop(delta, other, oi, j, act[1])
-    lost = _lost(hp)
     kos = [sum(1 for h in hp[s] if h <= 0) for s in (0, 1)]
-    pay = lost[1] - lost[0]
+    _end_of_turn(cond, hp)
+    lost = _lost(hp)
+    switches = sum(x[0] == "switch" for x in act_a) - sum(x[0] == "switch" for x in act_b)
+    pay = lost[1] - lost[0] - SWITCH_COST * switches
     if TURN2:
         tw_left = {si: TAILWIND_TURNS for si in tailwind}
         tr_left = TRICK_ROOM_TURNS if trick_room else 0
-        before, w = pay, 1.0
+        before, w = lost[1] - lost[0], 1.0
         for _ in range(HORIZON - 1):
             w *= TURN2
             occ = turn2(sides, occ, hp, delta, {si for si, n in tw_left.items() if n > 0}, tr_left > 0, sashed,
-                        weather, terrain)
+                        weather, terrain, cond)
             tw_left = {si: n - 1 for si, n in tw_left.items()}
             tr_left -= 1
             lost = _lost(hp)
@@ -475,9 +558,9 @@ def turn1_faints(log):
     return out
 
 
-def _init(turn2, horizon):
-    global TURN2, HORIZON
-    TURN2, HORIZON = turn2, horizon
+def _init(turn2, horizon, switch_cost=0.0):
+    global TURN2, HORIZON, SWITCH_COST
+    TURN2, HORIZON, SWITCH_COST = turn2, horizon, switch_cost
 
 
 def _job(args):
@@ -555,7 +638,7 @@ def load_games(n_games=3000, seed=0, back=True, revealed=False):
 def run_jobs(jobs, workers=4, fn=None):
     """(id, result) for each (id, matchup args) job, solved in parallel; failed matchups are skipped."""
     import multiprocessing as mp
-    with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(TURN2, HORIZON)) as pool:
+    with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(TURN2, HORIZON, SWITCH_COST)) as pool:
         for (rid, _), out in zip(jobs, pool.imap(fn or _job, [j for _, j in jobs], chunksize=8)):
             if out is not None:
                 yield rid, out
@@ -608,7 +691,7 @@ def validate(n_games=3000, seed=0, back=True, workers=4, revealed=False):
 
 
 def main(argv=None):
-    global TURN2, HORIZON
+    global TURN2, HORIZON, SWITCH_COST
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("validate")
@@ -616,6 +699,8 @@ def main(argv=None):
     v.add_argument("--no-back", action="store_true", help="leads only, no switching (the first model)")
     v.add_argument("--turn2", type=float, default=TURN2, help="weight of turn 2 in the payoff (0: one-turn model)")
     v.add_argument("--horizon", type=int, default=HORIZON, help="turns in all (turns after the first are greedy)")
+    v.add_argument("--switch-cost", type=float, default=SWITCH_COST, help="payoff charged per turn-1 switch")
+    v.add_argument("--seed", type=int, default=0)
     v.add_argument("--workers", type=int, default=4)
     v.add_argument("--revealed", action="store_true", help="use the moves and items each replay revealed")
     m = sub.add_parser("matchup")
@@ -623,8 +708,8 @@ def main(argv=None):
     m.add_argument("b")
     args = p.parse_args(argv)
     if args.cmd == "validate":
-        TURN2, HORIZON = args.turn2, args.horizon
-        validate(args.games, back=not args.no_back, workers=args.workers, revealed=args.revealed)
+        TURN2, HORIZON, SWITCH_COST = args.turn2, args.horizon, args.switch_cost
+        validate(args.games, seed=args.seed, back=not args.no_back, workers=args.workers, revealed=args.revealed)
     else:
         a = [ds.real_spec(x) for x in args.a.split(",")]
         b = [ds.real_spec(x) for x in args.b.split(",")]
