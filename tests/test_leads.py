@@ -53,3 +53,27 @@ def test_resolve_fake_out_protect_and_order(monkeypatch):
     pay, ko_a, ko_b = leads.resolve(a, b, [("move", "Hit", 0), ("move", "Hit", 0)], [("pass",), ("pass",)],
                                     None, None)
     assert ko_a == 1 and pay == pytest.approx(1.0 + 0.5)
+
+
+def test_resolve_switch_wide_guard_and_redirect(monkeypatch):
+    # A1's Hit does 60% to B1 / B2 but only 20% to the back Pokemon B3; Spread does 30% to each target
+    def dmg(me, i, other, j, moves, w, tr):
+        if moves == ["Spread"]:
+            return [30.0]
+        return [20.0 if other.specs[j].name == "B3" else 60.0]
+    monkeypatch.setattr(leads, "damage", dmg)
+    monkeypatch.setattr(leads, "move_info", lambda m: {"priority": 0, "category": "Physical"})
+    a = side(mon("A1", 50), mon("A2", 50))
+    b = side(mon("B1", 100), mon("B2", 100), mon("B3", 100))
+    # B1 switches to B3: the hit aimed at slot 0 lands on B3 (20%), B3 does not move this turn
+    pay, _, _ = leads.resolve(a, b, [("move", "Hit", 0), ("pass",)], [("switch", 2), ("pass",)], None, None)
+    assert pay == pytest.approx(0.20)
+    # Wide Guard blocks the spread move entirely
+    pay, _, _ = leads.resolve(a, b, [("move", "Spread", None), ("pass",)], [("wideguard",), ("pass",)], None, None)
+    assert pay == pytest.approx(0.0)
+    # Follow Me on slot 1 pulls the single-target hit aimed at slot 0
+    pay, _, _ = leads.resolve(a, b, [("move", "Hit", 0), ("pass",)], [("pass",), ("redirect",)], None, None)
+    assert pay == pytest.approx(0.60)
+    # Helping Hand: 60% * 1.5 = 90%
+    pay, _, _ = leads.resolve(a, b, [("move", "Hit", 0), ("helping",)], [("pass",), ("pass",)], None, None)
+    assert pay == pytest.approx(0.90)

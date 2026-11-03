@@ -61,18 +61,18 @@ def grounded(spec):
 
 
 class Side:
-    """Two leads with the boosts, Speed and field effects they have on turn 1."""
+    """Two leads (roster 0 and 1) and up to two Pokemon in the back (2 and 3), with turn-1 boosts and Speed."""
 
-    def __init__(self, specs):
-        self.specs = specs
-        self.boosts = [{} for _ in specs]
-        self.speed = [s.speed for s in specs]
+    def __init__(self, leads, back=()):
+        self.specs = list(leads) + list(back)
+        self.boosts = [{} for _ in self.specs]
+        self.speed = [s.speed for s in self.specs]
 
 
 def field_of(a: Side, b: Side):
     """Weather and terrain after leads' abilities (slower setter wins) and then Mega abilities (slower Mega wins)."""
     weather = terrain = None
-    mons = a.specs + b.specs
+    mons = a.specs[:2] + b.specs[:2]
     for stage in ("pre", "mega"):
         for s in sorted(mons, key=lambda s: -s.speed):  # fastest activates first, so the slowest one sticks
             ab = s.pre_ability if stage == "pre" else (s.ability if "-Mega" in s.name else None)
@@ -83,13 +83,13 @@ def field_of(a: Side, b: Side):
     return weather, terrain
 
 
-def setup(a_specs, b_specs):
-    a, b = Side(a_specs), Side(b_specs)
+def setup(a_leads, b_leads, a_back=(), b_back=()):
+    a, b = Side(a_leads, a_back), Side(b_leads, b_back)
     weather, terrain = field_of(a, b)
     for side, other in ((a, b), (b, a)):
         for i, s in enumerate(side.specs):
-            if s.pre_ability == "Intimidate":
-                for j, t in enumerate(other.specs):
+            if i < 2 and s.pre_ability == "Intimidate":
+                for j, t in enumerate(other.specs[:2]):
                     if t.ability == "Defiant":
                         other.boosts[j]["atk"] = other.boosts[j].get("atk", 0) + 2
                     elif t.ability == "Competitive":
@@ -136,8 +136,12 @@ def damage(side, i, other, j, moves, weather, terrain):
     return _damage(key_a, key_d, weather, terrain, tuple(moves))
 
 
+REDIRECT = {"Follow Me", "Rage Powder"}
+
+
 def actions(side, i, other, weather, terrain):
-    """A lead's candidate actions: ('protect',), ('fake', target), ('move', name, target or None for spread)."""
+    """A lead's candidate actions: ('move', name, target slot or None for spread), ('fake', slot), ('protect',),
+    ('redirect',), ('wideguard',), ('helping',), ('switch', roster index of a back Pokemon)."""
     s = side.specs[i]
     dmg_moves = [m for m in s.moves if move_info(m) and move_info(m)["category"] != "Status" and m != "Fake Out"]
     cands = []
@@ -156,67 +160,100 @@ def actions(side, i, other, weather, terrain):
         out += [("fake", 0), ("fake", 1)]
     if PROTECT & set(s.moves):
         out.append(("protect",))
+    if REDIRECT & set(s.moves):
+        out.append(("redirect",))
+    if "Wide Guard" in s.moves:
+        out.append(("wideguard",))
+    if "Helping Hand" in s.moves:
+        out.append(("helping",))
+    out += [("switch", k) for k in range(2, len(side.specs))]
     return out or [("pass",)]
 
 
+PRIORITY = {"helping": 5, "protect": 4, "wideguard": 3, "fake": 3, "redirect": 2}
+
+
 def resolve(a, b, act_a, act_b, weather, terrain):
-    """One turn. Returns (payoff to side a, expected KOs by a, expected KOs by b)."""
+    """One turn. Returns (payoff to side a, KOs by a, KOs by b). Actions are per field slot (0, 1)."""
     sides = (a, b)
-    hp = [[100.0, 100.0], [100.0, 100.0]]
+    acts = (act_a, act_b)
+    occ = [[0, 1], [0, 1]]  # roster index in each slot
+    for si in (0, 1):  # switches happen before any move
+        for slot in (0, 1):
+            if acts[si][slot][0] == "switch":
+                occ[si][slot] = acts[si][slot][1]
+    hp = [[100.0] * len(sides[0].specs), [100.0] * len(sides[1].specs)]
     protected, flinched, moved, sashed = set(), set(), set(), set()
+    wide, redirect, helped = set(), {}, set()
     order = []
-    for si, acts in enumerate((act_a, act_b)):
-        for i, act in enumerate(acts):
-            if act[0] == "protect":
-                pri = 4
-            elif act[0] == "fake":
-                pri = 3
-            elif act[0] == "move":
+    for si in (0, 1):
+        for slot, act in enumerate(acts[si]):
+            if act[0] in ("switch", "pass"):
+                continue
+            if act[0] in PRIORITY:
+                pri = PRIORITY[act[0]]
+            else:
                 pri = move_info(act[1])["priority"]
                 if act[1] == "Grassy Glide" and terrain == "Grassy":
                     pri = 1
-            else:
-                pri = -9
-            order.append((pri, sides[si].speed[i], si, i, act))
+            order.append((pri, sides[si].speed[slot], si, slot, act))
     order.sort(key=lambda x: (-x[0], -x[1]))
-    acts_of = {(0, i): act_a[i] for i in range(2)} | {(1, i): act_b[i] for i in range(2)}
-    for pri, _, si, i, act in order:
-        moved.add((si, i))
-        if hp[si][i] <= 0 or (si, i) in flinched or act[0] == "pass":
+    for pri, _, si, slot, act in order:
+        moved.add((si, slot))
+        if hp[si][slot] <= 0 or (si, slot) in flinched:
             continue
         if act[0] == "protect":
-            protected.add((si, i))
+            protected.add((si, slot))
+            continue
+        if act[0] == "wideguard":
+            wide.add(si)
+            continue
+        if act[0] == "redirect":
+            redirect[si] = slot
+            continue
+        if act[0] == "helping":
+            helped.add((si, 1 - slot))
             continue
         oi = 1 - si
         me, other = sides[si], sides[oi]
-        if act[0] == "fake" or (act[0] == "move" and act[2] is not None):
+        alive = [t for t in (0, 1) if hp[oi][occ[oi][t]] > 0]
+        if act[0] == "fake" or act[2] is not None:
             t = act[1] if act[0] == "fake" else act[2]
-            if hp[oi][t] <= 0:
+            r = redirect.get(oi)
+            if r is not None and r in alive:
+                t = r
+            elif t not in alive:
                 t = 1 - t
-            targets = [t] if hp[oi][t] > 0 else []
+            targets = [t] if t in alive else []
         else:
-            targets = [t for t in (0, 1) if hp[oi][t] > 0]
-        for t in targets:
-            if (oi, t) in protected:
+            if oi in wide:
                 continue
-            if pri > 0 and terrain == "Psychic" and grounded(other.specs[t]):
+            targets = alive
+        for t in targets:
+            j = occ[oi][t]
+            if (oi, t) in protected and j == t:
+                continue
+            if pri > 0 and terrain == "Psychic" and grounded(other.specs[j]):
                 continue
             if act[0] == "fake":
-                dmg = damage(me, i, other, t, ["Fake Out"], weather, terrain)[0]
+                dmg = damage(me, slot, other, j, ["Fake Out"], weather, terrain)[0]
                 if (oi, t) not in moved:
                     flinched.add((oi, t))
             else:
-                if act[1] == "Sucker Punch" and ((oi, t) in moved or acts_of[(oi, t)][0] != "move"):
+                target_act = acts[oi][t]
+                if act[1] == "Sucker Punch" and ((oi, t) in moved or target_act[0] != "move" or j != t):
                     continue
-                dmg = damage(me, i, other, t, [act[1]], weather, terrain)[0]
-            if hp[oi][t] >= 100 and dmg >= 100 and (oi, t) not in sashed and (
-                    other.specs[t].item == "Focus Sash" or other.specs[t].ability == "Sturdy"):
-                sashed.add((oi, t))
+                dmg = damage(me, slot, other, j, [act[1]], weather, terrain)[0]
+            if (si, slot) in helped:
+                dmg *= 1.5
+            if hp[oi][j] >= 100 and dmg >= 100 and (oi, j) not in sashed and (
+                    other.specs[j].item == "Focus Sash" or other.specs[j].ability == "Sturdy"):
+                sashed.add((oi, j))
                 dmg = 99.5  # Focus Sash / Sturdy: survives a KO from full HP once
-            hp[oi][t] -= dmg
-    lost = [[max(0.0, 100 - max(h, 0.0)) / 100 + (KO_BONUS if h <= 0 else 0.0) for h in hp[s]] for s in (0, 1)]
+            hp[oi][j] -= dmg
+    lost = [sum(max(0.0, 100 - max(h, 0.0)) / 100 + (KO_BONUS if h <= 0 else 0.0) for h in hp[s]) for s in (0, 1)]
     kos = [sum(1 for h in hp[s] if h <= 0) for s in (0, 1)]
-    return sum(lost[1]) - sum(lost[0]), kos[1], kos[0]
+    return lost[1] - lost[0], kos[1], kos[0]
 
 
 def solve(M):
@@ -232,11 +269,17 @@ def solve(M):
     return v + shift, r.x * v, c.x / c.x.sum()
 
 
-def matchup(a_specs, b_specs):
-    """(value to side a, expected KOs by a, expected KOs by b, details)."""
-    a, b, weather, terrain = setup(a_specs, b_specs)
-    acts_a = list(itertools.product(actions(a, 0, b, weather, terrain), actions(a, 1, b, weather, terrain)))
-    acts_b = list(itertools.product(actions(b, 0, a, weather, terrain), actions(b, 1, a, weather, terrain)))
+def joint(side, other, weather, terrain):
+    """Both leads' action pairs (two leads can't switch to the same Pokemon)."""
+    return [x for x in itertools.product(actions(side, 0, other, weather, terrain), actions(side, 1, other, weather,
+                                                                                            terrain))
+            if not (x[0][0] == x[1][0] == "switch" and x[0][1] == x[1][1])]
+
+
+def matchup(a_specs, b_specs, a_back=(), b_back=()):
+    """(value to side a, expected KOs by a, expected KOs by b, details). Back Pokemon add switching."""
+    a, b, weather, terrain = setup(a_specs, b_specs, a_back, b_back)
+    acts_a, acts_b = joint(a, b, weather, terrain), joint(b, a, weather, terrain)
     M = np.zeros((len(acts_a), len(acts_b)))
     KA = np.zeros_like(M)
     KB = np.zeros_like(M)
@@ -276,13 +319,14 @@ def turn1_faints(log):
     return out
 
 
-def validate(n_games=3000, seed=0):
+def validate(n_games=3000, seed=0, back=True):
     from replays import DB, base, expected
     db = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
     sides = {}
-    for rid, side, r, o, won, leads, megas in db.execute(
-            "SELECT id, side, rating, opp_rating, won, leads, mega FROM sides"):
-        sides[(rid, side)] = (r, o, won, json.loads(leads), json.loads(megas))
+    for rid, side, r, o, won, leads, megas, brought, preview in db.execute(
+            "SELECT id, side, rating, opp_rating, won, leads, mega, brought, preview FROM sides"):
+        sides[(rid, side)] = (r, o, won, json.loads(leads), json.loads(megas), json.loads(brought or "[]"),
+                              json.loads(preview or "[]"))
     games = [rid for (rid, side) in sides if side == "p1" and (rid, "p2") in sides
              and len(sides[(rid, "p1")][3]) == 2 and len(sides[(rid, "p2")][3]) == 2 and sides[(rid, "p1")][0]
              and sides[(rid, "p1")][1]]
@@ -300,6 +344,17 @@ def validate(n_games=3000, seed=0):
             out.append(s)
         return out
 
+    def bench(p):
+        """The two Pokemon in the back: brought non-leads, filled from the preview (losers reveal all four,
+        winners often fewer)."""
+        if not back:
+            return []
+        leads = {base(x) for x in p[3]}
+        out = [x for x in p[5] if base(x) not in leads]
+        out += [x for x in p[6] if base(x) not in leads and base(x) not in {base(y) for y in out}]
+        out = out[:2]
+        return specs([base(x) for x in out], p[4]) or []
+
     rows = []
     for rid in games[:n_games]:
         p1, p2 = sides[(rid, "p1")], sides[(rid, "p2")]
@@ -307,7 +362,7 @@ def validate(n_games=3000, seed=0):
         if not a or not b:
             continue
         try:
-            v, ka, kb, _ = matchup(a, b)
+            v, ka, kb, _ = matchup(a, b, bench(p1), bench(p2))
         except Exception:
             continue
         log = db.execute("SELECT log FROM replays WHERE id = ?", (rid,)).fetchone()[0]
@@ -356,12 +411,13 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("validate")
     v.add_argument("--games", type=int, default=3000)
+    v.add_argument("--no-back", action="store_true", help="leads only, no switching (the first model)")
     m = sub.add_parser("matchup")
     m.add_argument("a", help="comma-separated lead names (tournament names, e.g. Raichu-Mega-X,Sneasler)")
     m.add_argument("b")
     args = p.parse_args(argv)
     if args.cmd == "validate":
-        validate(args.games)
+        validate(args.games, back=not args.no_back)
     else:
         a = [ds.real_spec(x) for x in args.a.split(",")]
         b = [ds.real_spec(x) for x in args.b.split(",")]
