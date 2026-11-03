@@ -30,6 +30,12 @@ points per game per unit beyond the leads' strength (4 sd). Results by lead valu
 +0.15 to +0.5 +7.5 ± 3.0, above +0.5 (580 games) +6.4 ± 2.1. That is about 40% of what the actual turn-1 KO difference
 says turn 1 is worth (r +0.23). Turn-2 weight 0.5 is slightly worse (KO r +0.09, result r +0.093); default 1.0.
 
+Fourth validation, four turns (turns 2-4 greedy, Tailwind 4 / Trick Room 5 turns; same games): turn-1 play gets
+more realistic and turn-1 KOs better predicted (KO difference r +0.17, KOs by side r +0.18 vs +0.13; Tailwind 4.7% of
+turn-1 actions vs players' 3.6%, was 1.9%; Trick Room 3.4% vs 3.7%), but results do not improve: lead value vs result
+r +0.086 (later turns weighted 0.7: +0.094) against +0.095 for two turns, and switching stays at 22% vs players' 10%.
+Default stays at two turns (`--horizon 4` for the longer one).
+
 Validation against ladder replays (python analysis/leads.py validate):
     1. turn-1 faints: do the model's expected KOs match the faints logged before turn 2?
     2. results: does the lead value predict who wins, beyond the Elo expectation and the Pokemon's individual strength?
