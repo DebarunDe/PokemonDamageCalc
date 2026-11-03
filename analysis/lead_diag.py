@@ -120,7 +120,10 @@ def main(argv=None):
     p.add_argument("--games", type=int, default=2000)
     p.add_argument("--revealed", action="store_true")
     p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--horizon", type=int, default=ld.HORIZON)
+    p.add_argument("--turn2", type=float, default=ld.TURN2)
     args = p.parse_args(argv)
+    ld.TURN2, ld.HORIZON = args.turn2, args.horizon
     from replays import base
     db, sides, jobs = ld.load_games(args.games, revealed=args.revealed)
     args_of = dict(jobs)

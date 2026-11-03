@@ -63,6 +63,8 @@ PROTECT = {"Protect", "Detect", "Spiky Shield", "King's Shield", "Baneful Bunker
 KO_BONUS = 0.5
 TOP_MOVES = 3  # damaging actions kept per Pokemon (by damage), besides Protect and Fake Out
 TURN2 = 1.0  # weight of turn 2 (played greedily from the state turn 1 leaves) in the payoff; 0 = one-turn model
+HORIZON = 2  # turns in all: turn 1 solved as a game, turns 2.. played greedily; turn t weighs TURN2 ** (t - 1)
+TAILWIND_TURNS, TRICK_ROOM_TURNS = 3, 4  # turns of effect after the turn it is set (4 and 5 counting that turn)
 SETUP = {"Swords Dance": {"atk": 2}, "Nasty Plot": {"spa": 2}, "Dragon Dance": {"atk": 1, "spe": 1},
          "Calm Mind": {"spa": 1, "spd": 1}, "Quiver Dance": {"spa": 1, "spd": 1, "spe": 1},
          "Bulk Up": {"atk": 1, "def": 1}, "Shell Smash": {"atk": 2, "spa": 2, "spe": 2, "def": -1, "spd": -1},
@@ -247,12 +249,13 @@ def attack_moves(spec):
 
 
 def turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain):
-    """Turn 2, greedy: fainted leads are replaced from the back, then every active Pokemon uses the move and target
-    worth the most damage (+ KO bonus) given the boosts, drops, Tailwind and Trick Room turn 1 left. Updates hp."""
+    """A later turn, greedy: fainted Pokemon are replaced from the back, then every active Pokemon uses the move and
+    target worth the most damage (+ KO bonus) given the boosts, drops, Tailwind and Trick Room in effect. Updates hp
+    and delta (stat drops); returns the field occupants after the turn."""
     occ = [list(o) for o in occ]
     for si in (0, 1):
         for slot in (0, 1):
-            if hp[si][occ[si][slot]] <= 0:
+            if occ[si][slot] is None or hp[si][occ[si][slot]] <= 0:
                 spare = [k for k in range(len(sides[si].specs)) if k not in occ[si] and hp[si][k] > 0]
                 occ[si][slot] = spare[0] if spare else None
     now = []
@@ -289,7 +292,11 @@ def turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain)
         if j is not None and j not in alive:
             j = alive[0] if alive else None
         for t in (alive if j is None and move_info(m)["spread"] else [j] if j is not None else []):
-            _hit(hp, sashed, now[oi], oi, t, damage(now[si], k, now[oi], t, [m], weather, terrain)[0])
+            d = damage(now[si], k, now[oi], t, [m], weather, terrain)[0]
+            _hit(hp, sashed, now[oi], oi, t, d)
+            if m in DROPS and hp[oi][t] > 0 and d > 0:
+                _drop(delta, now[oi], oi, t, m)
+    return occ
 
 
 def resolve(a, b, act_a, act_b, weather, terrain):
@@ -384,9 +391,18 @@ def resolve(a, b, act_a, act_b, weather, terrain):
     kos = [sum(1 for h in hp[s] if h <= 0) for s in (0, 1)]
     pay = lost[1] - lost[0]
     if TURN2:
-        turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain)
-        lost2 = _lost(hp)
-        pay += TURN2 * (lost2[1] - lost2[0] - pay)
+        tw_left = {si: TAILWIND_TURNS for si in tailwind}
+        tr_left = TRICK_ROOM_TURNS if trick_room else 0
+        before, w = pay, 1.0
+        for _ in range(HORIZON - 1):
+            w *= TURN2
+            occ = turn2(sides, occ, hp, delta, {si for si, n in tw_left.items() if n > 0}, tr_left > 0, sashed,
+                        weather, terrain)
+            tw_left = {si: n - 1 for si, n in tw_left.items()}
+            tr_left -= 1
+            lost = _lost(hp)
+            pay += w * (lost[1] - lost[0] - before)
+            before = lost[1] - lost[0]
     return pay, kos[1], kos[0]
 
 
@@ -453,9 +469,9 @@ def turn1_faints(log):
     return out
 
 
-def _init(turn2):
-    global TURN2
-    TURN2 = turn2
+def _init(turn2, horizon):
+    global TURN2, HORIZON
+    TURN2, HORIZON = turn2, horizon
 
 
 def _job(args):
@@ -533,7 +549,7 @@ def load_games(n_games=3000, seed=0, back=True, revealed=False):
 def run_jobs(jobs, workers=4, fn=None):
     """(id, result) for each (id, matchup args) job, solved in parallel; failed matchups are skipped."""
     import multiprocessing as mp
-    with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(TURN2,)) as pool:
+    with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(TURN2, HORIZON)) as pool:
         for (rid, _), out in zip(jobs, pool.imap(fn or _job, [j for _, j in jobs], chunksize=8)):
             if out is not None:
                 yield rid, out
@@ -586,13 +602,14 @@ def validate(n_games=3000, seed=0, back=True, workers=4, revealed=False):
 
 
 def main(argv=None):
-    global TURN2
+    global TURN2, HORIZON
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("validate")
     v.add_argument("--games", type=int, default=3000)
     v.add_argument("--no-back", action="store_true", help="leads only, no switching (the first model)")
     v.add_argument("--turn2", type=float, default=TURN2, help="weight of turn 2 in the payoff (0: one-turn model)")
+    v.add_argument("--horizon", type=int, default=HORIZON, help="turns in all (turns after the first are greedy)")
     v.add_argument("--workers", type=int, default=4)
     v.add_argument("--revealed", action="store_true", help="use the moves and items each replay revealed")
     m = sub.add_parser("matchup")
@@ -600,7 +617,7 @@ def main(argv=None):
     m.add_argument("b")
     args = p.parse_args(argv)
     if args.cmd == "validate":
-        TURN2 = args.turn2
+        TURN2, HORIZON = args.turn2, args.horizon
         validate(args.games, back=not args.no_back, workers=args.workers, revealed=args.revealed)
     else:
         a = [ds.real_spec(x) for x in args.a.split(",")]

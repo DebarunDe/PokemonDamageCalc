@@ -107,3 +107,29 @@ def test_turn2_tailwind_and_setup(monkeypatch):
     pay, _, _ = leads.resolve(a, b, [("pass",), ("setup", "Swords Dance")], [("pass",), ("pass",)], None, None)
     assert pay == pytest.approx(-0.6)
     leads.attack_moves.cache_clear()
+
+
+def test_longer_horizon_and_tailwind_expiry(monkeypatch):
+    monkeypatch.setattr(leads, "damage", lambda me, i, other, j, moves, w, tr: [30.0 for _ in moves])
+    monkeypatch.setattr(leads, "move_info", lambda m: {"priority": 0, "spread": False, "category": "Status" if m in (
+        "Tailwind",) else "Physical"})
+    monkeypatch.setattr(leads, "TURN2", 1.0)
+    leads.attack_moves.cache_clear()
+
+    def mk(name, speed, moves):
+        return Mon(name=name, speed=speed, types=("Normal",), ability=None, item=None, moves=moves)
+    # A2 and B2 have no moves, so it is A1 (50 Speed, 100 under Tailwind) against B1 (90); every hit does 30%
+    a = leads.Side([mk("A1", 50, ["Hit", "Tailwind"]), mk("A2", 1, [])])
+    b = leads.Side([mk("B1", 90, ["Hit"]), mk("B2", 1, [])])
+
+    def play(horizon, tw_turns):
+        monkeypatch.setattr(leads, "HORIZON", horizon)
+        monkeypatch.setattr(leads, "TAILWIND_TURNS", tw_turns)
+        return leads.resolve(a, b, [("tailwind",), ("pass",)], [("move", "Hit", 0), ("pass",)], None, None)[0]
+    # turn 1: B1 hits A1 (70%). Turns 2-3 trade 30% each way (A1 10%, B1 40%). Turn 4: with Tailwind still up A1
+    # moves first (B1 to 10%) and then faints; without it A1 faints before moving (B1 stays at 40%)
+    assert play(4, 3) == pytest.approx(0.9 - 1.5)
+    assert play(4, 0) == pytest.approx(0.6 - 1.5)
+    assert play(4, 2) == pytest.approx(0.6 - 1.5)  # Tailwind over after turn 3: B1 first again on turn 4
+    assert play(2, 3) == pytest.approx(0.3 - 0.6)  # two turns: A1 at 40%, B1 at 70%
+    leads.attack_moves.cache_clear()
