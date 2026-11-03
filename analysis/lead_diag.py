@@ -8,6 +8,18 @@
     4. Mega timing: how often a leading Mega Evolves on turn 1 (the model assumes always)
 
     python analysis/lead_diag.py --games 2000 [--revealed]
+
+Findings (2026-11, 1,947 games, two-turn model, 7,022 observed turn-1 actions):
+  - revealed sets barely matter (leads.py validate --revealed: KO r +0.15 vs +0.16, result r +0.104 vs +0.095):
+    the misses are in play, not in sets
+  - the model switches far too much (23% of turn-1 actions vs 10%) and Protects a little too much (15% vs 13%)
+  - it under-plays moves whose payoff comes after turn 2: Tailwind 1.9% vs 3.6% (Whimsicott Tailwinds 53% of the
+    time, the model ~0), Trick Room 2.3% vs 3.7% (Farigiraf 48% vs 25%), setup 0.9% vs 4.3% (Gholdengo Nasty Plot
+    26%), redirection 0.5% vs 1.9% (Indeedee-F Follow Me 41%: it protects the Trick Room setter)
+  - 8% of turn-1 actions are status moves it doesn't model (Encore, Parting Shot, Spore, Taunt, Will-O-Wisp, ...)
+  - KOs are under-predicted overall (0.14 vs 0.21 per side), most for weather setters (dealt 0.15 vs 0.29); sides
+    with Fake Out or Intimidate take twice the KOs the model expects (0.09 vs 0.18, 0.08 vs 0.17)
+  - a leading Mega Evolves on turn 1 in 73% of games, not always
 """
 
 from __future__ import annotations
