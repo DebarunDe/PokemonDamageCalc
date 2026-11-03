@@ -34,6 +34,7 @@ Validation against ladder replays (python analysis/leads.py validate):
 from __future__ import annotations
 
 import argparse
+import copy
 import itertools
 import json
 import random
@@ -54,6 +55,16 @@ SEEDS = {"Electric Seed": ("Electric", "def"), "Grassy Seed": ("Grassy", "def"),
 PROTECT = {"Protect", "Detect", "Spiky Shield", "King's Shield", "Baneful Bunker", "Burning Bulwark", "Silk Trap"}
 KO_BONUS = 0.5
 TOP_MOVES = 3  # damaging actions kept per Pokemon (by damage), besides Protect and Fake Out
+TURN2 = 1.0  # weight of turn 2 (played greedily from the state turn 1 leaves) in the payoff; 0 = one-turn model
+SETUP = {"Swords Dance": {"atk": 2}, "Nasty Plot": {"spa": 2}, "Dragon Dance": {"atk": 1, "spe": 1},
+         "Calm Mind": {"spa": 1, "spd": 1}, "Quiver Dance": {"spa": 1, "spd": 1, "spe": 1},
+         "Bulk Up": {"atk": 1, "def": 1}, "Shell Smash": {"atk": 2, "spa": 2, "spe": 2, "def": -1, "spd": -1},
+         "Agility": {"spe": 2}, "Iron Defense": {"def": 2}, "Coil": {"atk": 1, "def": 1},
+         "Growth": {"atk": 1, "spa": 1},
+         "Victory Dance": {"atk": 1, "def": 1, "spe": 1}, "Tidy Up": {"atk": 1, "spe": 1}}
+DROPS = {"Icy Wind": {"spe": -1}, "Electroweb": {"spe": -1}, "Rock Tomb": {"spe": -1}, "Bulldoze": {"spe": -1},
+         "Snarl": {"spa": -1}, "Struggle Bug": {"spa": -1}, "Breaking Swipe": {"atk": -1}, "Mud Shot": {"spe": -1},
+         "Low Sweep": {"spe": -1}, "Lunge": {"atk": -1}, "Spirit Break": {"spa": -1}, "Fire Lash": {"def": -1}}
 
 
 @lru_cache(maxsize=None)
@@ -164,6 +175,15 @@ def actions(side, i, other, weather, terrain):
                 cands.append((d1[k], ("move", m, 1)))
     cands.sort(key=lambda x: -x[0])
     out = [c for _, c in cands[:TOP_MOVES]]
+    if TURN2:  # moves whose value shows on turn 2: speed control, stat drops, setup
+        for _, c in cands:
+            if c[1] in DROPS and c not in out and not any(o[0] == "move" and o[1] == c[1] for o in out):
+                out.append(c)  # the best-damage target of each stat-drop move
+        if "Tailwind" in s.moves:
+            out.append(("tailwind",))
+        if "Trick Room" in s.moves:
+            out.append(("trickroom",))
+        out += [("setup", m) for m in s.moves if m in SETUP]
     if "Fake Out" in s.moves:
         out += [("fake", 0), ("fake", 1)]
     if PROTECT & set(s.moves):
@@ -178,7 +198,91 @@ def actions(side, i, other, weather, terrain):
     return out or [("pass",)]
 
 
-PRIORITY = {"helping": 5, "protect": 4, "wideguard": 3, "fake": 3, "redirect": 2}
+PRIORITY = {"helping": 5, "protect": 4, "wideguard": 3, "fake": 3, "redirect": 2, "tailwind": 0, "setup": 0,
+            "trickroom": -7}
+STATUS = {"helping", "protect", "wideguard", "redirect", "tailwind", "setup", "trickroom"}
+
+
+def stage(n):
+    return (2 + n) / 2 if n >= 0 else 2 / (2 - n)
+
+
+def _lost(hp):
+    return [sum(max(0.0, 100 - max(h, 0.0)) / 100 + (KO_BONUS if h <= 0 else 0.0) for h in hp[s]) for s in (0, 1)]
+
+
+def _hit(hp, sashed, other, oi, j, dmg):
+    if hp[oi][j] >= 100 and dmg >= 100 and (oi, j) not in sashed and (
+            other.specs[j].item == "Focus Sash" or other.specs[j].ability == "Sturdy"):
+        sashed.add((oi, j))
+        dmg = 99.5  # Focus Sash / Sturdy: survives a KO from full HP once
+    hp[oi][j] -= dmg
+
+
+def _drop(delta, other, oi, j, move):
+    """A stat-drop move's secondary effect on the Pokemon it hit (Defiant / Competitive answer it)."""
+    t = other.specs[j]
+    if t.ability in ("Clear Body", "White Smoke", "Full Metal Body"):
+        return
+    d = delta[oi][j]
+    for st, n in DROPS[move].items():
+        d[st] = d.get(st, 0) + n
+    if t.ability == "Defiant":
+        d["atk"] = d.get("atk", 0) + 2
+    elif t.ability == "Competitive":
+        d["spa"] = d.get("spa", 0) + 2
+
+
+@lru_cache(maxsize=None)
+def attack_moves(spec):
+    return [m for m in spec.moves if move_info(m) and move_info(m)["category"] != "Status"
+            and m not in ("Fake Out", "First Impression")]
+
+
+def turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain):
+    """Turn 2, greedy: fainted leads are replaced from the back, then every active Pokemon uses the move and target
+    worth the most damage (+ KO bonus) given the boosts, drops, Tailwind and Trick Room turn 1 left. Updates hp."""
+    occ = [list(o) for o in occ]
+    for si in (0, 1):
+        for slot in (0, 1):
+            if hp[si][occ[si][slot]] <= 0:
+                spare = [k for k in range(len(sides[si].specs)) if k not in occ[si] and hp[si][k] > 0]
+                occ[si][slot] = spare[0] if spare else None
+    now = []
+    for si, side in enumerate(sides):
+        c = copy.copy(side)
+        c.boosts = [{st: b.get(st, 0) + d.get(st, 0) for st in set(b) | set(d)} for b, d in zip(side.boosts, delta[si])]
+        now.append(c)
+    order = []
+    for si in (0, 1):
+        oi = 1 - si
+        targets = [occ[oi][t] for t in (0, 1) if occ[oi][t] is not None]
+        for slot in (0, 1):
+            k = occ[si][slot]
+            moves = attack_moves(now[si].specs[k]) if k is not None else []
+            if not moves or not targets:
+                continue
+            dmg = {j: damage(now[si], k, now[oi], j, moves, weather, terrain) for j in targets}
+            best = None
+            for x, m in enumerate(moves):
+                val = lambda j: min(dmg[j][x], hp[oi][j]) + (100 * KO_BONUS if dmg[j][x] >= hp[oi][j] else 0)
+                opts = [(sum(val(j) for j in targets), None)] if move_info(m)["spread"] else \
+                    [(val(j), j) for j in targets]
+                for v, j in opts:
+                    if best is None or v > best[0]:
+                        best = (v, m, j)
+            spe = sides[si].speed[k] * stage(delta[si][k].get("spe", 0)) * (2 if si in tailwind else 1)
+            order.append((move_info(best[1])["priority"], -spe if trick_room else spe, si, k, best[1], best[2]))
+    order.sort(key=lambda x: (-x[0], -x[1]))
+    for _, _, si, k, m, j in order:
+        oi = 1 - si
+        if hp[si][k] <= 0:
+            continue
+        alive = [occ[oi][t] for t in (0, 1) if occ[oi][t] is not None and hp[oi][occ[oi][t]] > 0]
+        if j is not None and j not in alive:
+            j = alive[0] if alive else None
+        for t in (alive if j is None and move_info(m)["spread"] else [j] if j is not None else []):
+            _hit(hp, sashed, now[oi], oi, t, damage(now[si], k, now[oi], t, [m], weather, terrain)[0])
 
 
 def resolve(a, b, act_a, act_b, weather, terrain):
@@ -193,13 +297,15 @@ def resolve(a, b, act_a, act_b, weather, terrain):
     hp = [[100.0] * len(sides[0].specs), [100.0] * len(sides[1].specs)]
     protected, flinched, moved, sashed = set(), set(), set(), set()
     wide, redirect, helped = set(), {}, set()
+    delta = [[{} for _ in sd.specs] for sd in sides]
+    tailwind, trick_room = set(), False
     order = []
     for si in (0, 1):
         for slot, act in enumerate(acts[si]):
             if act[0] in ("switch", "pass"):
                 continue
             if act[0] in PRIORITY:
-                pri = PRIORITY[act[0]]
+                pri = PRIORITY[act[0]] + (sides[si].specs[slot].ability == "Prankster" and act[0] in STATUS)
             else:
                 pri = move_info(act[1])["priority"]
                 if act[1] == "Grassy Glide" and terrain == "Grassy":
@@ -221,6 +327,16 @@ def resolve(a, b, act_a, act_b, weather, terrain):
             continue
         if act[0] == "helping":
             helped.add((si, 1 - slot))
+            continue
+        if act[0] == "tailwind":
+            tailwind.add(si)
+            continue
+        if act[0] == "trickroom":
+            trick_room = not trick_room
+            continue
+        if act[0] == "setup":
+            for st, n in SETUP[act[1]].items():
+                delta[si][slot][st] = delta[si][slot].get(st, 0) + n
             continue
         oi = 1 - si
         me, other = sides[si], sides[oi]
@@ -254,14 +370,17 @@ def resolve(a, b, act_a, act_b, weather, terrain):
                 dmg = damage(me, slot, other, j, [act[1]], weather, terrain)[0]
             if (si, slot) in helped:
                 dmg *= 1.5
-            if hp[oi][j] >= 100 and dmg >= 100 and (oi, j) not in sashed and (
-                    other.specs[j].item == "Focus Sash" or other.specs[j].ability == "Sturdy"):
-                sashed.add((oi, j))
-                dmg = 99.5  # Focus Sash / Sturdy: survives a KO from full HP once
-            hp[oi][j] -= dmg
-    lost = [sum(max(0.0, 100 - max(h, 0.0)) / 100 + (KO_BONUS if h <= 0 else 0.0) for h in hp[s]) for s in (0, 1)]
+            _hit(hp, sashed, other, oi, j, dmg)
+            if act[0] == "move" and act[1] in DROPS and hp[oi][j] > 0 and dmg > 0:
+                _drop(delta, other, oi, j, act[1])
+    lost = _lost(hp)
     kos = [sum(1 for h in hp[s] if h <= 0) for s in (0, 1)]
-    return lost[1] - lost[0], kos[1], kos[0]
+    pay = lost[1] - lost[0]
+    if TURN2:
+        turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain)
+        lost2 = _lost(hp)
+        pay += TURN2 * (lost2[1] - lost2[0] - pay)
+    return pay, kos[1], kos[0]
 
 
 def solve(M):
@@ -327,7 +446,19 @@ def turn1_faints(log):
     return out
 
 
-def validate(n_games=3000, seed=0, back=True):
+def _init(turn2):
+    global TURN2
+    TURN2 = turn2
+
+
+def _job(args):
+    try:
+        return matchup(*args)[:3]
+    except Exception:
+        return None
+
+
+def validate(n_games=3000, seed=0, back=True, workers=4):
     from replays import DB, base, expected
     db = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
     sides = {}
@@ -363,21 +494,24 @@ def validate(n_games=3000, seed=0, back=True):
         out = out[:2]
         return specs([base(x) for x in out], p[4]) or []
 
-    rows = []
+    import multiprocessing as mp
+    jobs, keep = [], []
     for rid in games[:n_games]:
         p1, p2 = sides[(rid, "p1")], sides[(rid, "p2")]
         a, b = specs(p1[3], p1[4]), specs(p2[3], p2[4])
-        if not a or not b:
-            continue
-        try:
-            v, ka, kb, _ = matchup(a, b, bench(p1), bench(p2))
-        except Exception:
-            continue
-        log = db.execute("SELECT log FROM replays WHERE id = ?", (rid,)).fetchone()[0]
-        f = turn1_faints(log)
-        rows.append((v, ka, kb, f["p2"], f["p1"], p1[2] - expected(p1[0], p1[1]), p1[3], p2[3]))
-        if len(rows) % 250 == 0:
-            print(f"  {len(rows)} games", flush=True)
+        if a and b:
+            jobs.append((a, b, bench(p1), bench(p2)))
+            keep.append(rid)
+    rows = []
+    with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(TURN2,)) as pool:
+        for rid, out in zip(keep, pool.imap(_job, jobs, chunksize=8)):
+            if out is None:
+                continue
+            p1, p2 = sides[(rid, "p1")], sides[(rid, "p2")]
+            f = turn1_faints(db.execute("SELECT log FROM replays WHERE id = ?", (rid,)).fetchone()[0])
+            rows.append((*out, f["p2"], f["p1"], p1[2] - expected(p1[0], p1[1]), p1[3], p2[3]))
+            if len(rows) % 250 == 0:
+                print(f"  {len(rows)} games", flush=True)
     R = np.array([r[:6] for r in rows], dtype=float)
     v, ka, kb, fa, fb, res = R.T
     print(f"\n{len(rows)} ladder games (random sample)")
@@ -415,17 +549,21 @@ def validate(n_games=3000, seed=0, back=True):
 
 
 def main(argv=None):
+    global TURN2
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("validate")
     v.add_argument("--games", type=int, default=3000)
     v.add_argument("--no-back", action="store_true", help="leads only, no switching (the first model)")
+    v.add_argument("--turn2", type=float, default=TURN2, help="weight of turn 2 in the payoff (0: one-turn model)")
+    v.add_argument("--workers", type=int, default=4)
     m = sub.add_parser("matchup")
     m.add_argument("a", help="comma-separated lead names (tournament names, e.g. Raichu-Mega-X,Sneasler)")
     m.add_argument("b")
     args = p.parse_args(argv)
     if args.cmd == "validate":
-        validate(args.games, back=not args.no_back)
+        TURN2 = args.turn2
+        validate(args.games, back=not args.no_back, workers=args.workers)
     else:
         a = [ds.real_spec(x) for x in args.a.split(",")]
         b = [ds.real_spec(x) for x in args.b.split(",")]

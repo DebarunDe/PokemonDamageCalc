@@ -30,8 +30,8 @@ def test_turn1_faints():
     assert leads.turn1_faints(log) == {"p1": 1, "p2": 1}
 
 
-def mon(name, speed, types=("Normal",)):
-    return SimpleNamespace(name=name, speed=speed, types=types, ability=None, item=None, moves=[])
+def mon(name, speed, types=("Normal",), moves=()):
+    return SimpleNamespace(name=name, speed=speed, types=types, ability=None, item=None, moves=list(moves))
 
 
 def side(*mons):
@@ -39,6 +39,7 @@ def side(*mons):
 
 
 def test_resolve_fake_out_protect_and_order(monkeypatch):
+    monkeypatch.setattr(leads, "TURN2", 0.0)
     # every hit does 60%, Fake Out 10%
     monkeypatch.setattr(leads, "damage",
                         lambda me, i, other, t, moves, w, tr: [10.0 if moves == ["Fake Out"] else 60.0])
@@ -56,6 +57,7 @@ def test_resolve_fake_out_protect_and_order(monkeypatch):
 
 
 def test_resolve_switch_wide_guard_and_redirect(monkeypatch):
+    monkeypatch.setattr(leads, "TURN2", 0.0)
     # A1's Hit does 60% to B1 / B2 but only 20% to the back Pokemon B3; Spread does 30% to each target
     def dmg(me, i, other, j, moves, w, tr):
         if moves == ["Spread"]:
@@ -77,3 +79,31 @@ def test_resolve_switch_wide_guard_and_redirect(monkeypatch):
     # Helping Hand: 60% * 1.5 = 90%
     pay, _, _ = leads.resolve(a, b, [("move", "Hit", 0), ("helping",)], [("pass",), ("pass",)], None, None)
     assert pay == pytest.approx(0.90)
+
+
+
+class Mon(SimpleNamespace):
+    __hash__ = object.__hash__  # leads caches per set
+
+
+def test_turn2_tailwind_and_setup(monkeypatch):
+    # Hit does 60%, 90% at +2 Atk; on turn 2 every active Pokemon attacks greedily
+    monkeypatch.setattr(leads, "damage", lambda me, i, other, j, moves, w, tr:
+                        [90.0 if me.boosts[i].get("atk") == 2 else 60.0 for _ in moves])
+    monkeypatch.setattr(leads, "move_info", lambda m: {"priority": 0, "spread": False, "category": "Status" if m in (
+        "Tailwind", "Swords Dance") else "Physical"})
+    monkeypatch.setattr(leads, "TURN2", 1.0)
+    leads.attack_moves.cache_clear()
+
+    def mk(name, speed, moves):
+        return Mon(name=name, speed=speed, types=("Normal",), ability=None, item=None, moves=moves)
+    a = leads.Side([mk("A1", 50, ["Hit", "Tailwind"]), mk("A2", 50, ["Hit", "Swords Dance"])])
+    b = leads.Side([mk("B1", 90, ["Hit"]), mk("B2", 90, ["Hit"])])
+    # turn 1: A sets Tailwind + Swords Dance, B passes. Turn 2: A outspeeds (100 vs 90): 60% + 90% KO B1 before it
+    # moves (1.5), B2 hits A1 for 60% -> 0.9
+    pay, _, _ = leads.resolve(a, b, [("tailwind",), ("setup", "Swords Dance")], [("pass",), ("pass",)], None, None)
+    assert pay == pytest.approx(0.9)
+    # Swords Dance without Tailwind: B moves first and KOs A1 (60 + 60), then A2's +2 hit does 90% -> 0.9 - 1.5
+    pay, _, _ = leads.resolve(a, b, [("pass",), ("setup", "Swords Dance")], [("pass",), ("pass",)], None, None)
+    assert pay == pytest.approx(-0.6)
+    leads.attack_moves.cache_clear()
