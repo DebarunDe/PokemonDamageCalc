@@ -36,6 +36,14 @@ turn-1 actions vs players' 3.6%, was 1.9%; Trick Room 3.4% vs 3.7%), but results
 r +0.086 (later turns weighted 0.7: +0.094) against +0.095 for two turns, and switching stays at 22% vs players' 10%.
 Default stays at two turns (`--horizon 4` for the longer one).
 
+Fifth validation, status moves (Encore, Parting Shot, Spore, Taunt, Will-O-Wisp, Thunder Wave) and a switch cost
+(calibrated on a separate 500-game sample, seed 1: cost 0.2 had the best turn-1 KO r; higher costs move the
+hedging from switches to Protect, 24% -> 16% switches but 15% -> 19% Protect, against players' 10% / 12%; the model
+picks the new status moves 1.7% of the time vs players' 8.5%). Same 1,947 test games: KO difference r +0.16 / +0.17,
+lead value vs result r +0.094 (cost 0.2) and +0.092 (cost 0), against +0.095 before. No gain: by the stopping rule
+the lead model ends here at about r +0.095 (+4.5 ± 1.1 per unit beyond strength). Both stay as options; the default
+switch cost is 0. The remaining gap looks behavioural: players hedge less than equilibrium play does.
+
 Validation against ladder replays (python analysis/leads.py validate):
     1. turn-1 faints: do the model's expected KOs match the faints logged before turn 2?
     2. results: does the lead value predict who wins, beyond the Elo expectation and the Pokemon's individual strength?
