@@ -1,19 +1,27 @@
 """Lead model: turn 1 of a doubles game as a simultaneous-choice game, solved for both sides' best mixed strategies.
 
-Each lead picks an action at the same time as the opponent's: a damaging move and its target, Protect, or Fake Out.
+Each lead picks an action at the same time as the opponent's: a damaging move and its target, Protect, Fake Out,
+Follow Me / Rage Powder, Wide Guard, Helping Hand, or a switch to one of the two Pokemon in the back.
 Every combination is resolved with real damage calcs and turn-1 mechanics: priority and Speed order (Swift Swim and
 friends in their weather, Unburden after a terrain seed), weather and terrain from lead and Mega abilities (the slower
 setter's wins, Megas after leads), Intimidate (Defiant / Competitive answer it), Fake Out flinch, Protect, Sucker
 Punch needing an attacking target, Psychic Terrain blocking priority into grounded targets, single-target moves
 retargeting when their target faints, Focus Sash / Sturdy. Payoff = damage dealt minus damage taken, + 0.5 per KO.
-The game's value under optimal mixed play is the lead matchup's predicted edge. Status moves other than Protect /
-Fake Out are not modelled, nor is switching.
+The game's value under optimal mixed play is the lead matchup's predicted edge. Other status moves (Tailwind, Trick
+Room, setup) are not modelled: one turn can't see their payoff.
 
 First validation (2026-11, 1,947 random ladder games): predicted vs logged turn-1 KO difference r +0.10; lead value
 vs result r +0.06, +4.9 ± 1.8 points per game per unit beyond the leads' individual strength (the actual turn-1 KO
 difference correlates +0.23 with results, so the model captures about a quarter of what turn 1 is worth). It is
 overconfident: where it predicts a +0.5 KO edge or more, the logged edge is about +0.1 (switching, redirection and
 speed control, which it leaves out).
+
+Second validation, with switching, redirection, Wide Guard and Helping Hand (same 1,947 games; back = brought
+non-leads, filled from the preview when the replay reveals fewer): calibration is better (predicted +0.5 KO edge or
+more -> logged +0.18, was +0.10; the predicted KO rate fell to 0.09 against 0.20 logged, so it is now underconfident
+about KOs), but discrimination did not improve: KO difference r +0.08 (was +0.10), lead value vs result r +0.06
+(same), +7.2 ± 3.1 per unit beyond strength (values are compressed by switching, so per-unit size is not comparable).
+The top lead-value bin (>= +0.5, 129 games) is -0.1 ± 4.4, not monotone. `validate --no-back` runs the first model.
 
 Validation against ladder replays (python analysis/leads.py validate):
     1. turn-1 faints: do the model's expected KOs match the faints logged before turn 2?
