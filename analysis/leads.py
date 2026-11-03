@@ -465,28 +465,49 @@ def _job(args):
         return None
 
 
-def validate(n_games=3000, seed=0, back=True, workers=4):
-    from replays import DB, base, expected
+_revealed = {}
+
+
+def revealed_spec(spec, moves, item):
+    """`spec` with the moves the replay revealed (filled up to four from the tournament set) and the revealed item.
+    Revealed moves are the ones used at some point in the game, so this leaks a little of what the players chose."""
+    moves = list(dict.fromkeys(m for m in moves if move_info(m)))[:4]
+    moves += [m for m in spec.moves if m not in moves][:4 - len(moves)]
+    item = item or spec.item
+    key = (spec.name, item, tuple(moves))
+    if key not in _revealed:
+        _revealed[key] = ds.Spec(spec.name, spec.ability, item, spec.nature, spec.sp, moves, spec.pre_ability)
+    return _revealed[key]
+
+
+def load_games(n_games=3000, seed=0, back=True, revealed=False):
+    """A random sample of ladder games with two known leads per side: (db, sides, [(id, matchup args)]).
+    sides[(id, 'p1' / 'p2')] = (rating, opp rating, won, leads, megas, brought, preview, moves, items)."""
+    from replays import DB, base
     db = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
     sides = {}
-    for rid, side, r, o, won, leads, megas, brought, preview in db.execute(
-            "SELECT id, side, rating, opp_rating, won, leads, mega, brought, preview FROM sides"):
+    for rid, side, r, o, won, leads, megas, brought, preview, moves, items in db.execute(
+            "SELECT id, side, rating, opp_rating, won, leads, mega, brought, preview, moves, items FROM sides"):
         sides[(rid, side)] = (r, o, won, json.loads(leads), json.loads(megas), json.loads(brought or "[]"),
-                              json.loads(preview or "[]"))
+                              json.loads(preview or "[]"), json.loads(moves or "{}"), json.loads(items or "{}"))
     games = [rid for (rid, side) in sides if side == "p1" and (rid, "p2") in sides
              and len(sides[(rid, "p1")][3]) == 2 and len(sides[(rid, "p2")][3]) == 2 and sides[(rid, "p1")][0]
              and sides[(rid, "p1")][1]]
     random.Random(seed).shuffle(games)
     forms = lead_forms()
 
-    def specs(leads, megas):
+    def specs(names, p):
         out = []
-        for n in leads:
-            mega = next((m for m in megas if base(m) == n), None)
-            name = mega or (n if megas else forms.get(n, n))
+        for n in names:
+            mega = next((m for m in p[4] if base(m) == n), None)
+            name = mega or (n if p[4] else forms.get(n, n))
             s = ds.real_spec(name) or ds.real_spec(n)
             if s is None:
                 return None
+            if revealed:
+                mv = next((v for k, v in p[7].items() if base(k) == n), [])
+                it = next((v for k, v in p[8].items() if base(k) == n), None)
+                s = revealed_spec(s, mv, it)
             out.append(s)
         return out
 
@@ -498,27 +519,36 @@ def validate(n_games=3000, seed=0, back=True, workers=4):
         leads = {base(x) for x in p[3]}
         out = [x for x in p[5] if base(x) not in leads]
         out += [x for x in p[6] if base(x) not in leads and base(x) not in {base(y) for y in out}]
-        out = out[:2]
-        return specs([base(x) for x in out], p[4]) or []
+        return specs([base(x) for x in out[:2]], p) or []
 
-    import multiprocessing as mp
-    jobs, keep = [], []
+    jobs = []
     for rid in games[:n_games]:
         p1, p2 = sides[(rid, "p1")], sides[(rid, "p2")]
-        a, b = specs(p1[3], p1[4]), specs(p2[3], p2[4])
+        a, b = specs(p1[3], p1), specs(p2[3], p2)
         if a and b:
-            jobs.append((a, b, bench(p1), bench(p2)))
-            keep.append(rid)
-    rows = []
+            jobs.append((rid, (a, b, bench(p1), bench(p2))))
+    return db, sides, jobs
+
+
+def run_jobs(jobs, workers=4, fn=None):
+    """(id, result) for each (id, matchup args) job, solved in parallel; failed matchups are skipped."""
+    import multiprocessing as mp
     with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(TURN2,)) as pool:
-        for rid, out in zip(keep, pool.imap(_job, jobs, chunksize=8)):
-            if out is None:
-                continue
-            p1, p2 = sides[(rid, "p1")], sides[(rid, "p2")]
-            f = turn1_faints(db.execute("SELECT log FROM replays WHERE id = ?", (rid,)).fetchone()[0])
-            rows.append((*out, f["p2"], f["p1"], p1[2] - expected(p1[0], p1[1]), p1[3], p2[3]))
-            if len(rows) % 250 == 0:
-                print(f"  {len(rows)} games", flush=True)
+        for (rid, _), out in zip(jobs, pool.imap(fn or _job, [j for _, j in jobs], chunksize=8)):
+            if out is not None:
+                yield rid, out
+
+
+def validate(n_games=3000, seed=0, back=True, workers=4, revealed=False):
+    from replays import expected
+    db, sides, jobs = load_games(n_games, seed, back, revealed)
+    rows = []
+    for rid, out in run_jobs(jobs, workers):
+        p1, p2 = sides[(rid, "p1")], sides[(rid, "p2")]
+        f = turn1_faints(db.execute("SELECT log FROM replays WHERE id = ?", (rid,)).fetchone()[0])
+        rows.append((*out, f["p2"], f["p1"], p1[2] - expected(p1[0], p1[1]), p1[3], p2[3]))
+        if len(rows) % 250 == 0:
+            print(f"  {len(rows)} games", flush=True)
     R = np.array([r[:6] for r in rows], dtype=float)
     v, ka, kb, fa, fb, res = R.T
     print(f"\n{len(rows)} ladder games (random sample)")
@@ -564,13 +594,14 @@ def main(argv=None):
     v.add_argument("--no-back", action="store_true", help="leads only, no switching (the first model)")
     v.add_argument("--turn2", type=float, default=TURN2, help="weight of turn 2 in the payoff (0: one-turn model)")
     v.add_argument("--workers", type=int, default=4)
+    v.add_argument("--revealed", action="store_true", help="use the moves and items each replay revealed")
     m = sub.add_parser("matchup")
     m.add_argument("a", help="comma-separated lead names (tournament names, e.g. Raichu-Mega-X,Sneasler)")
     m.add_argument("b")
     args = p.parse_args(argv)
     if args.cmd == "validate":
         TURN2 = args.turn2
-        validate(args.games, back=not args.no_back, workers=args.workers)
+        validate(args.games, back=not args.no_back, workers=args.workers, revealed=args.revealed)
     else:
         a = [ds.real_spec(x) for x in args.a.split(",")]
         b = [ds.real_spec(x) for x in args.b.split(",")]
