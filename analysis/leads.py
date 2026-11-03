@@ -23,6 +23,13 @@ about KOs), but discrimination did not improve: KO difference r +0.08 (was +0.10
 (same), +7.2 ± 3.1 per unit beyond strength (values are compressed by switching, so per-unit size is not comparable).
 The top lead-value bin (>= +0.5, 129 games) is -0.1 ± 4.4, not monotone. `validate --no-back` runs the first model.
 
+Third validation, two-turn horizon (Tailwind, Trick Room, setup, stat drops on turn 1; turn 2 played greedily with
+replacements; same 1,947 games). The first real gain: turn-1 KO difference r +0.16 (was +0.10 / +0.08), calibration
+holds (predicted >= +0.5 -> logged +0.19, <= -0.5 -> -0.21); lead value vs result r +0.095 (was +0.06), +4.7 ± 1.1
+points per game per unit beyond the leads' strength (4 sd). Results by lead value: below -0.5 (594 games) -3.9 ± 2.1,
++0.15 to +0.5 +7.5 ± 3.0, above +0.5 (580 games) +6.4 ± 2.1. That is about 40% of what the actual turn-1 KO difference
+says turn 1 is worth (r +0.23). Turn-2 weight 0.5 is slightly worse (KO r +0.09, result r +0.093); default 1.0.
+
 Validation against ladder replays (python analysis/leads.py validate):
     1. turn-1 faints: do the model's expected KOs match the faints logged before turn 2?
     2. results: does the lead value predict who wins, beyond the Elo expectation and the Pokemon's individual strength?
