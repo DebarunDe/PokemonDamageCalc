@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 from collections import Counter, defaultdict
 from functools import lru_cache
 from itertools import combinations
@@ -143,18 +144,25 @@ BENCH_SPEED = None
 
 def bench():
     global BENCH, BENCH_SPEED
-    if BENCH is None:
-        BENCH = [PokemonSet(s, nature="Serious", ability=abilities(s)[0], item=stone(s), sp={"hp": 32, "def": 17,
-                                                                                               "spd": 17})
-                 for s in ROSTER]
+    if BENCH is None or BENCH_SPEED is None:
+        defs = [PokemonSet(s, nature="Serious", ability=abilities(s)[0], item=stone(s), sp={"hp": 32, "def": 17,
+                                                                                            "spd": 17})
+                for s in ROSTER]
         cache = OUT / "theory_bench_speed.json"
-        sp = json.loads(cache.read_text()) if cache.exists() else {}
-        for s in ROSTER:
-            if s not in sp:
-                sp[s] = speed_of(PokemonSet(s, nature="Serious", ability=abilities(s)[0], item=stone(s),
-                                            sp={"spe": 16}))
-        cache.write_text(json.dumps(sp))
-        BENCH_SPEED = [sp[s] for s in ROSTER]
+        try:
+            sp = json.loads(cache.read_text())
+        except (OSError, ValueError):
+            sp = {}
+        missing = [s for s in ROSTER if s not in sp]
+        for s in missing:
+            sp[s] = speed_of(PokemonSet(s, nature="Serious", ability=abilities(s)[0], item=stone(s),
+                                        sp={"spe": 16}))
+        if missing:  # write atomically: parallel workers read this file
+            OUT.mkdir(exist_ok=True)
+            tmp = cache.with_suffix(f".{os.getpid()}.tmp")
+            tmp.write_text(json.dumps(sp))
+            os.replace(tmp, cache)
+        BENCH, BENCH_SPEED = defs, [sp[s] for s in ROSTER]
     return BENCH, BENCH_SPEED
 
 
