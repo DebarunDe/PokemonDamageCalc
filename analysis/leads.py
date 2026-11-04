@@ -44,6 +44,9 @@ lead value vs result r +0.094 (cost 0.2) and +0.092 (cost 0), against +0.095 bef
 the lead model ends here at about r +0.095 (+4.5 ± 1.1 per unit beyond strength). Both stay as options; the default
 switch cost is 0. The remaining gap looks behavioural: players hedge less than equilibrium play does.
 
+Dynamic turn order (speed changes apply to Pokemon that haven't moved yet, as in Champions): same 1,947 games, result
+r +0.095 (was +0.092), KO difference r +0.17 (same). Correct mechanics, no measurable change.
+
 Validation against ladder replays (python analysis/leads.py validate):
     1. turn-1 faints: do the model's expected KOs match the faints logged before turn 2?
     2. results: does the lead value predict who wins, beyond the Elo expectation and the Pokemon's individual strength?

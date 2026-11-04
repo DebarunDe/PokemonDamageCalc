@@ -1,0 +1,64 @@
+# Mega Medicham, theory build with the teambuilding-guide roles (analysis/team_roles.py), no usage data.
+# Requirements (Stratagem / Champions guide / MysticVGC checklist): two speed control (Electroweb, Thunder Wave),
+#   Fake Out or redirection (Rage Powder), Intimidate or redirection (Rage Powder), a priority attack (Aqua Jet),
+#   no weakness shared by three members, one item each.
+# Cost of all requirements together: team offence 0.967 -> 0.964, threats answered 0.963 -> 0.945 (of Medicham's
+#   top 60 threats), against the best team without them: the roles are nearly free.
+# Moves: support members carry their 2 best attacks + the utility move + Protect; items assigned by hand (item clause).
+# Lead: Medicham + Sinistcha (Rage Powder takes the hits aimed at Medicham; Hospitality heals it on switch-in).
+# Not scored: Tinkaton's Gigaton Hammer can't be used twice in a row; Farigiraf's Armor Tail (if run) blocks priority.
+# SPs = Stat Points (max 32 per stat, 66 total).
+
+Medicham @ Medichamite
+Ability: Pure Power
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Close Combat
+- Zen Headbutt
+- Ice Punch
+- Protect
+
+Sinistcha @ Sitrus Berry
+Ability: Hospitality
+SPs: 32 HP / 2 Def / 32 SpD
+Calm Nature
+- Leaf Storm
+- Shadow Ball
+- Rage Powder
+- Protect
+
+Rotom-Heat @ Life Orb
+Ability: Levitate
+SPs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Overheat
+- Thunderbolt
+- Electroweb
+- Protect
+
+Tinkaton @ Metal Coat
+Ability: Mold Breaker
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Gigaton Hammer
+- Wood Hammer
+- Thunder Wave
+- Protect
+
+Feraligatr @ Mystic Water
+Ability: Sheer Force
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Liquidation
+- Ice Punch
+- Aqua Jet
+- Protect
+
+Farigiraf @ Twisted Spoon
+Ability: Cud Chew
+SPs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Psychic
+- Shadow Ball
+- Grass Knot
+- Protect
