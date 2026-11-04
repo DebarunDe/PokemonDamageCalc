@@ -54,7 +54,11 @@ SKIP_MOVES = {"Hyper Beam", "Giga Impact", "Meteor Beam", "Sky Attack", "Skull B
               "Hard Press", "Crush Grip", "Wring Out", "Eruption", "Water Spout", "Dragon Energy", "Electro Ball",
               "Gyro Ball", "Grass Knot", "Low Kick", "Heat Crash", "Heavy Slam", "Punishment", "Trump Card",
               "Pain Split", "Mind Blown", "Head Smash", "Wood Hammer", "Brave Bird", "Flare Blitz", "Volt Tackle",
-              "Wave Crash", "Double-Edge", "Head Charge", "Light of Ruin", "Chloroblast", "Steel Beam"}
+              "Wave Crash", "Double-Edge", "Head Charge", "Light of Ruin", "Chloroblast", "Steel Beam",
+              # recharge, two-turn and lock-in moves
+              "Blast Burn", "Hydro Cannon", "Frenzy Plant", "Prismatic Laser", "Roar of Time", "Rock Wrecker",
+              "Eternabeam", "Phantom Force", "Shadow Force", "Bounce", "Dig", "Dive", "Fly", "Sky Drop", "Geomancy",
+              "Freeze Shock", "Ice Burn", "Razor Wind", "Raging Fury", "Glaive Rush", "Meteor Assault"}
 ALLY_SPREAD = {"Earthquake", "Discharge", "Surf", "Bulldoze", "Lava Plume", "Sludge Wave", "Petal Blizzard",
                "Boomburst", "Parabolic Charge", "Magnitude", "Searing Shot", "Brutal Swing", "Mind Blown",
                "Explosion", "Self-Destruct"}
