@@ -170,3 +170,26 @@ def test_status_moves_and_switch_cost(monkeypatch):
     assert leads.resolve(c, b, [("switch", 2), ("pass",)], [("pass",), ("pass",)], None, None)[0] == \
         pytest.approx(-0.2)
     leads.attack_moves.cache_clear()
+
+
+def test_dynamic_speed_tailwind_same_turn(monkeypatch):
+    # Prankster Tailwind goes first; its partner (50 Speed -> 100) then moves before B1 (90) on the same turn
+    monkeypatch.setattr(leads, "damage", lambda me, i, other, j, moves, w, tr: [60.0 for _ in moves])
+    monkeypatch.setattr(leads, "move_info", lambda m: {"priority": 0, "spread": False, "accuracy": True,
+                                                       "category": "Status" if m == "Tailwind" else "Physical"})
+    monkeypatch.setattr(leads, "TURN2", 0.0)
+
+    def mk(name, speed, ability=None):
+        return Mon(name=name, speed=speed, types=("Normal",), ability=ability, item=None, moves=[],
+                   pre_ability=ability)
+    a = leads.Side([mk("A1", 40, "Prankster"), mk("A2", 50)])
+    b = leads.Side([mk("B1", 90), mk("B2", 1)])
+    acts_a, acts_b = [("tailwind",), ("move", "Hit", 0)], [("move", "Hit", 1), ("pass",)]
+    # A2 hits B1 (60%) before B1 hits A2 (60%): same either way unless something faints, so make A2 and B1 frail
+    monkeypatch.setattr(leads, "damage", lambda me, i, other, j, moves, w, tr: [100.0 for _ in moves])
+    monkeypatch.setattr(leads, "DYNAMIC_SPEED", True)
+    pay_dyn = leads.resolve(a, b, acts_a, acts_b, None, None)[0]
+    monkeypatch.setattr(leads, "DYNAMIC_SPEED", False)
+    pay_fixed = leads.resolve(a, b, acts_a, acts_b, None, None)[0]
+    assert pay_dyn == pytest.approx(1.5)  # A2 KOs B1 first
+    assert pay_fixed == pytest.approx(-1.5)  # B1 KOs A2 first

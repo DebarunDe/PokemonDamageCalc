@@ -81,6 +81,7 @@ HORIZON = 2  # turns in all: turn 1 solved as a game, turns 2.. played greedily;
 SWITCH_COST = 0.0  # payoff charged per turn-1 switch (tempo the model can't see otherwise); see lead_diag
 STATUS_MOVES = {"Encore", "Parting Shot", "Spore", "Sleep Powder", "Taunt", "Will-O-Wisp", "Thunder Wave"}
 TAILWIND_TURNS, TRICK_ROOM_TURNS = 3, 4  # turns of effect after the turn it is set (4 and 5 counting that turn)
+DYNAMIC_SPEED = True  # turn order recalculated after each action (current games, Champions); False: fixed at start
 SETUP = {"Swords Dance": {"atk": 2}, "Nasty Plot": {"spa": 2}, "Dragon Dance": {"atk": 1, "spe": 1},
          "Calm Mind": {"spa": 1, "spd": 1}, "Quiver Dance": {"spa": 1, "spd": 1, "spe": 1},
          "Bulk Up": {"atk": 1, "def": 1}, "Shell Smash": {"atk": 2, "spa": 2, "spe": 2, "def": -1, "spd": -1},
@@ -413,8 +414,18 @@ def resolve(a, b, act_a, act_b, weather, terrain):
                 if act[1] == "Grassy Glide" and terrain == "Grassy":
                     pri = 1
             order.append((pri, sides[si].speed[slot], si, slot, act))
-    order.sort(key=lambda x: (-x[0], -x[1]))
-    for pri, _, si, slot, act in order:
+
+    def now_speed(si, slot):
+        """Speed right now: turn order is recalculated after every action (Tailwind, Icy Wind, Thunder Wave and
+        other speed changes apply to the Pokemon that haven't moved yet this turn)."""
+        spe = sides[si].speed[slot] * stage(delta[si][slot].get("spe", 0)) * (2 if si in tailwind else 1)
+        return spe / 2 if cond.get((si, slot), {}).get("para", 0) >= 0.9 else spe
+
+    pending = order
+    while pending:
+        nxt = max(pending, key=lambda x: (x[0], now_speed(x[2], x[3]) if DYNAMIC_SPEED else x[1]))
+        pending = [x for x in pending if x is not nxt]
+        pri, _, si, slot, act = nxt
         moved.add((si, slot))
         if hp[si][slot] <= 0 or (si, slot) in flinched or occ[si][slot] != slot:
             continue
