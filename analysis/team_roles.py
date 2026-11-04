@@ -95,6 +95,9 @@ def main(argv=None):
     p.add_argument("core")
     p.add_argument("--threats", type=int, default=60)
     p.add_argument("--beam", type=int, default=60)
+    p.add_argument("--unburden", choices=["white-herb", "grassy-seed", "electric-seed"],
+                   help="core runs Unburden: its item is used up (no item damage, double Speed); seeds need their "
+                        "terrain setter on the team")
     args = p.parse_args(argv)
     best = tb.best_sets()
     defs, speeds = tc.bench()
@@ -102,8 +105,16 @@ def main(argv=None):
     idx = {s: i for i, s in enumerate(roster)}
     core_t, core_moves = tb.pset_of(best[args.core])
     import csv
+    want_item = "(none)" if args.unburden else best[args.core]["item"]
     k3 = [r for r in csv.DictReader(open(tc.OUT / "theory_movesets.csv")) if r["pokemon"] == args.core and r["k"] == "3"
-          and r["item"] == best[args.core]["item"] and r["ability"] == best[args.core]["ability"]]
+          and r["item"] == want_item and (args.unburden or r["ability"] == best[args.core]["ability"])]
+    seed_terrain = None
+    if args.unburden:
+        # item used up: damage as itemless (Acrobatics at full power), Speed doubled from then on
+        core_t.ability, core_t.item = "Unburden", None
+        core_t.speed = core_t.speed * 2
+        seed_terrain = {"grassy-seed": {"Grassy Surge", "Seed Sower"},
+                        "electric-seed": {"Electric Surge", "Hadron Engine"}}.get(args.unburden)
     if k3:
         core_moves = max(k3, key=lambda r: float(r["score"]))["moves"].split(", ")
     P, g, a = tb.damage_rows(core_t, core_moves, defs)
@@ -121,7 +132,8 @@ def main(argv=None):
         if hit >= 100 or (hit >= 50 and faster):
             threat.append((hit + 100 * faster, s))
     threats = [s for _, s in sorted(threat, reverse=True)[:args.threats]]
-    cand = [s for s in best if "-Mega" not in s and s.split("-")[0] != args.core.split("-")[0]]
+    core_mega = "-Mega" in args.core  # one Mega per team: partners may include one only if the core isn't a Mega
+    cand = [s for s in best if (not core_mega or "-Mega" not in s) and s.split("-")[0] != args.core.split("-")[0]]
     survive = {}
     for x in threats:
         t, mvs = sets[x]
@@ -187,11 +199,14 @@ def main(argv=None):
 
     def met(team):
         roles = [v.roles for v in team]
-        speed = sum("speed" in r for r in roles) + (1 if core_t.item == "Choice Scarf" else 0)
+        speed = sum("speed" in r for r in roles) + (1 if core_t.item == "Choice Scarf" or args.unburden else 0)
         out = {"speed": speed >= 2, "fakeout": any("fakeout" in r for r in roles),
                "pivot": any("pivot" in r for r in roles), "priority": any("priority" in r for r in roles)}
         weak = [core_weak] + [weaknesses(v.s, v.ability) for v in team]
         out["weakness"] = all(sum(t in w for w in weak) < 3 for t in TYPES)
+        out["mega"] = sum("-Mega" in v.s for v in team) <= (0 if core_mega else 1)
+        if seed_terrain:
+            out["terrain"] = any(set(tc.abilities(v.s)) & seed_terrain for v in team)
         return out
 
     def value(team):
@@ -223,7 +238,10 @@ def main(argv=None):
         return max(ok or beam, key=lambda t: value(t)[0])
 
     print(f"\n{args.core} ({', '.join(core_moves)}), Speed {core_t.speed}; weak to {', '.join(sorted(core_weak))}")
-    free = search([])
+    free = search(["mega"])
+    if seed_terrain:
+        REQUIREMENTS.append("terrain")
+    REQUIREMENTS.append("mega")
     full = search(REQUIREMENTS)
     fv, ff = value(free), value(full)
     print(f"\nno requirements:  offence {fv[1]:.3f}, threats answered {fv[2]:.3f}  "
@@ -231,7 +249,7 @@ def main(argv=None):
     print(f"all requirements: offence {ff[1]:.3f}, threats answered {ff[2]:.3f}  ({sum(met(full).values())} of "
           f"{len(REQUIREMENTS)} met)")
     print("cost of each requirement (value without it minus value with all):")
-    for r in REQUIREMENTS:
+    for r in [x for x in REQUIREMENTS if x != "mega"]:
         t = search([x for x in REQUIREMENTS if x != r])
         print(f"  {r:9s} {value(t)[0] - ff[0]:+.3f}")
     print("\nteam with every requirement:")

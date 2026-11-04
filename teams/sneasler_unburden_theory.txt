@@ -1,0 +1,69 @@
+# Unburden Sneasler, theory builds (analysis/team_roles.py --unburden ...), no usage data.
+# Unburden doubles Sneasler's Speed once its item is used: 172 -> 344, faster than every legal Pokemon. Itemless,
+#   Acrobatics is 110 power, so its best three attacks become Acrobatics / Close Combat / Gunk Shot.
+# Two ways to trigger it, both scored (team offence = share of the roster the team 2HKOs; answered = share of
+#   Sneasler's top 60 threats a teammate survives and 2HKOs; every guide requirement met in each):
+#   A. White Herb (below): no partner needed; Close Combat's drops pop the herb, so Sneasler is fast from the turn
+#      after its first Close Combat. Offence 0.977, answered 0.970.
+#   B. Grassy Seed + Rillaboom (Grassy Surge): fast from turn 1 and +1 Def; Rillaboom adds Fake Out and Grassy Glide.
+#      Offence 0.960, answered 0.973. Team: Sneasler, Rillaboom (Grassy Surge: Wood Hammer / Superpower / Fake Out /
+#      Protect), Mega Feraligatr (Aqua Tail / Double-Edge / Icy Wind / Protect), Basculegion-F (Hydro Pump / Ice Beam
+#      / Shadow Ball / Protect), Scizor (Bug Bite / Close Combat / Dual Wingbeat / Protect), Squawkabilly (Intimidate:
+#      Brave Bird / Double-Edge / Quick Attack / Protect).
+#   (Electric Seed + Pincurchin scores the same as B: offence 0.956, answered 0.978.)
+# Scores assume Sneasler at doubled Speed; with White Herb it is at 172 until the herb is used.
+# Items besides Sneasler's and the Mega Stone are assigned by hand (item clause). SPs: 32 per stat max, 66 total.
+
+Sneasler @ White Herb
+Ability: Unburden
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Close Combat
+- Acrobatics
+- Gunk Shot
+- Protect
+
+Maushold @ Focus Sash
+Ability: Technician
+SPs: 2 HP / 32 Atk / 32 Spe
+Jolly Nature
+- Population Bomb
+- Bite
+- Follow Me
+- Protect
+
+Feraligatr @ Feraligite
+Ability: Sheer Force
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Double-Edge
+- Aqua Tail
+- Aqua Jet
+- Protect
+
+Basculegion-F @ Life Orb
+Ability: Adaptability
+SPs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Hydro Pump
+- Shadow Ball
+- Icy Wind
+- Protect
+
+Volcarona @ Charcoal
+Ability: Flame Body
+SPs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Overheat
+- Bug Buzz
+- Flamethrower
+- Protect
+
+Mudsdale @ Soft Sand
+Ability: Stamina
+SPs: 32 HP / 32 Atk / 2 Def
+Adamant Nature
+- High Horsepower
+- Close Combat
+- Heavy Slam
+- Protect
