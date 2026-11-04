@@ -141,7 +141,11 @@ def main(argv=None):
         pri = np.array([tc.minfo(m)["priority"] > 0 for m in g])
         clean, pair, missed = [], [], []
         for i in walls:
-            first = (cspe > wall_speed.get(i, 999)) | pri  # per move: faster, or a priority move
+            w_spec = sets[roster[i]][0] if roster[i] in sets else None
+            grounded = w_spec is not None and "Flying" not in tc.info(roster[i])["types"] and \
+                w_spec.ability != "Levitate"
+            ok_pri = pri & ~(terrain == "Psychic" and grounded)  # Psychic Terrain blocks priority into grounded
+            first = (cspe > wall_speed.get(i, 999)) | ok_pri  # per move: faster, or a priority move
             c1 = float(np.max(a ** ae * (Pc[i] >= 100) * first))
             c2_ = float(np.max(a ** ae * (Pc[i] + core_hit[i] >= 100) * first))
             clean.append(c1)
