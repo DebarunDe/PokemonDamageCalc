@@ -53,6 +53,10 @@ TYPE_ITEM = {"Fire": "Charcoal", "Water": "Mystic Water", "Grass": "Miracle Seed
              "Ghost": "Spell Tag", "Dragon": "Dragon Fang", "Dark": "Black Glasses", "Steel": "Metal Coat",
              "Normal": "Silk Scarf", "Fairy": "Fairy Feather"}
 MAX_COMBOS = 400_000
+# expected share of full damage when each hit rolls accuracy a and the move stops at the first miss
+MULTI_ACC = {"Population Bomb": lambda a: sum(a ** i for i in range(1, 11)) / 10,
+             "Triple Axel": lambda a: (a * 20 + a ** 2 * 40 + a ** 3 * 60) / 120,
+             "Triple Kick": lambda a: (a * 10 + a ** 2 * 20 + a ** 3 * 30) / 60}
 
 
 def moves_for(s, cat):
@@ -162,6 +166,16 @@ def best_for(s):
             if not good:
                 continue
             acc = np.array([1.0 if ab == "No Guard" else tc.acc_of(m) for m in good])
+            if ab == "Hustle":  # Attack x1.5 (in the calc), physical moves 20% less accurate
+                acc = acc * np.array([0.8 if tc.minfo(m)["category"] == "Physical" else 1.0 for m in good])
+            # multi-hit moves that roll accuracy on every hit and stop at the first miss: the calc assumes every hit
+            # lands, so scale damage by the expected share of it and drop the separate accuracy factor
+            # (Skill Link / No Guard check once)
+            scale = np.ones(len(good))
+            for j, m in enumerate(good):
+                if m in MULTI_ACC and ab not in ("Skill Link", "No Guard"):
+                    scale[j], acc[j] = MULTI_ACC[m](acc[j]), 1.0
+            P0 = P0 * scale[None, :]
             mtype = [tc.minfo(m)["type"] for m in good]
             items = {"(none)" if not mega else t.item: (P0, 1.0)}
             if not mega:
@@ -174,7 +188,7 @@ def best_for(s):
                 items["Choice Scarf"] = (P0, 1.5)
                 _, PE = pct_matrix(t, good, "Expert Belt")
                 if PE is not None:
-                    items["Expert Belt"] = (PE, 1.0)
+                    items["Expert Belt"] = (PE * scale[None, :], 1.0)
             itemless = np.array([0.5 if m == "Acrobatics" else 1.0 for m in good])[None, :]
             for item, (P, spe_mult) in items.items():
                 if not mega and item not in ("(none)", "Expert Belt"):
@@ -189,7 +203,7 @@ def best_for(s):
                             "pokemon": s, "ability": ab, "category": cat, "item": item, "k": k,
                             "moves": ", ".join(good[c] for c in cols), "score": round(score, 4),
                             "power": round(float(vals.mean()), 4), "first": round(float((vals * mask).mean()), 4),
-                            "ohko": round(float((vals >= 1.0).mean()), 4),
+                            "ohko": round(float((vals > 0.5).mean()), 4),  # OHKO credit at any accuracy above 50%
                             "no_2hko": round(float((vals == 0).mean()), 4), "speed": round(t.speed * spe_mult),
                             "walled_by": ", ".join(d for d, v in zip(tc.ROSTER, vals) if v == 0)})
     return results
