@@ -1,0 +1,67 @@
+# Mega Medicham, theory build (Pokemon Champions VGC, Regulation M-C): no usage data anywhere.
+# Built by analysis/team_build.py from damage calcs against every legal Pokemon, weighted equally:
+#   Mega Medicham (Pure Power) OHKOs / 2HKOs more of the roster than anything else (power 0.80; 65% OHKO).
+#   Its walls (Aegislash, Armarouge, Gholdengo, Musharna, Mega Sableye, Slowbro, Spiritomb) and its threats
+#   (Pokemon that OHKO it, or 2HKO it and move first: Flying, Ghost and Fairy attackers above all) pick the rest.
+# Team: nothing on the roster walls it (every legal Pokemon is 2HKOd by someone), and 96% of Medicham's top 60
+#   threats are answered by a teammate that survives the threat's best hit and 2HKOs it back.
+# Moves and items are the exhaustive-search picks (analysis/movesets.py) with one item each (item clause).
+# Spreads are the theory spreads (32 attacking stat / 32 Speed); Incineroar is the support and is bulky instead.
+# Lead: Medicham + Incineroar (Fake Out + Intimidate cover Medicham's first attack).
+# Jolly Medicham (167 Speed instead of 152) outspeeds Mega Floette, Mega Staraptor, Mega Skarmory, Gengar and
+#   Hisuian Zoroark for a little less power (power 0.75 vs 0.80): the option if those are the worry.
+# SPs = Stat Points (max 32 per stat, 66 total).
+
+Medicham @ Medichamite
+Ability: Pure Power
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Close Combat
+- Zen Headbutt
+- Ice Punch
+- Protect
+
+Incineroar @ Sitrus Berry
+Ability: Intimidate
+SPs: 32 HP / 2 Atk / 32 SpD
+Careful Nature
+- Fake Out
+- Parting Shot
+- Flare Blitz
+- Darkest Lariat
+
+Rotom-Heat @ Life Orb
+Ability: Levitate
+SPs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Overheat
+- Thunderbolt
+- Shadow Ball
+- Protect
+
+Feraligatr @ Mystic Water
+Ability: Sheer Force
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Liquidation
+- Ice Punch
+- Superpower
+- Protect
+
+Scizor @ Muscle Band
+Ability: Technician
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Bug Bite
+- Dual Wingbeat
+- Hard Press
+- Protect
+
+Torterra @ Choice Scarf
+Ability: Shell Armor
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Headlong Rush
+- Wood Hammer
+- Superpower
+- Stone Edge
