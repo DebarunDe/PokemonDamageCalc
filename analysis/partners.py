@@ -126,19 +126,37 @@ def main(argv=None):
             hx = hx * np.array([0.5 if m in HALVED_IN_GRASSY else 1.0 for m in gx])[None, :]
         for c, v in zip(cands, hx.max(axis=1)):
             survive[(o, c)] = v < 100
+    # strict test for the walls: the partner moves first and KOs it that turn, alone (clean) or with the core's
+    # hit after setup (pair); wall Speed from its best theory set (Choice Scarf x1.5)
+    core_hit = P2.max(axis=1)
+    wall_speed = {i: sets[roster[i]][0].speed * (1.5 if sets[roster[i]][0].item == "Choice Scarf" else 1)
+                  for i in walls if roster[i] in sets}
     for c in cands:
         ct, cm = oursets[c]
         Pc, g = hits(ct.pset(), cm, defs, field)
         a = np.array([tc.acc_of(m) for m in g])
         off = (a[None, :] ** ae * np.where(Pc >= 100, 1, np.where(Pc >= 50, .5, 0))).max(axis=1)
         wall_cov = float(np.mean([off[i] > 0 for i in walls])) if walls else 0.0
+        cspe = ct.speed * (1.5 if ct.item == "Choice Scarf" else 1)
+        pri = np.array([tc.minfo(m)["priority"] > 0 for m in g])
+        clean, pair, missed = [], [], []
+        for i in walls:
+            first = (cspe > wall_speed.get(i, 999)) | pri  # per move: faster, or a priority move
+            c1 = float(np.max(a ** ae * (Pc[i] >= 100) * first))
+            c2_ = float(np.max(a ** ae * (Pc[i] + core_hit[i] >= 100) * first))
+            clean.append(c1)
+            pair.append(c2_)
+            if c2_ == 0:
+                missed.append(roster[i])
         # survive each threat's best hit (partner's theory set), then 2HKO it
         surv = [float(survive[(o, c)]) * (off[roster.index(o)] > 0) for o in thr]
         sup = sorted({SUPPORT[m] for m in tc.learn(c) if m in SUPPORT}
                      | ({"Intimidate"} if "Intimidate" in tc.abilities(c) else set())
                      | ({f"sets {terrain} Terrain"} if set(tc.abilities(c)) & setters else set()))
         cw = tr.weaknesses(c, ct.ability)
-        rows.append({"partner": c, "walls": round(wall_cov, 3), "answers": round(float(np.mean(surv)), 3),
+        rows.append({"partner": c, "walls": round(wall_cov, 3), "clean": round(float(np.mean(clean)), 3),
+                     "pair": round(float(np.mean(pair)), 3), "missed": ", ".join(missed),
+                     "answers": round(float(np.mean(surv)), 3),
                      "pair_offence": round(float(np.maximum(c2, off).mean()), 3),
                      "shared": ", ".join(sorted(weak & cw)),
                      "resists": ", ".join(t for t in sorted(weak) if tr.IMMUNE_ABILITY.get(ct.ability) == t or
@@ -147,7 +165,7 @@ def main(argv=None):
                      "set": f"{ct.ability} @ {ct.item}: {', '.join(cm)}",
                      "setter": bool(set(tc.abilities(c)) & setters)})
     for r in rows:
-        r["score"] = round(r["walls"] + r["answers"] - 0.15 * len([x for x in r["shared"].split(", ") if x])
+        r["score"] = round(r["pair"] + r["answers"] - 0.15 * len([x for x in r["shared"].split(", ") if x])
                            + 0.05 * len([x for x in r["support"].split(", ") if x]), 3)
     rows.sort(key=lambda r: -r["score"])
     with open(tc.OUT / f"partners_{s}.csv", "w", newline="") as fh:
@@ -157,13 +175,17 @@ def main(argv=None):
     if setters:
         print(f"\nterrain setters for the {args.seed}:")
         for r in [r for r in rows if r["setter"]]:
-            print(f"  {r['partner']:18s} walls {r['walls']:.2f} answers {r['answers']:.2f} "
-                  f"pair {r['pair_offence']:.2f} "
+            print(f"  {r['partner']:18s} clean {r['clean']:.2f} pair {r['pair']:.2f} (2HKO {r['walls']:.2f}) "
+                  f"answers {r['answers']:.2f} team {r['pair_offence']:.2f} "
                   f"shared [{r['shared']}] resists [{r['resists']}] support [{r['support']}]  {r['set']}")
-    print("\nbest partners overall (walls + answers - 0.15 per shared weakness + 0.05 per support option):")
+    print("\nbest partners (pair: share of the core's walls it moves first on and KOs that turn, alone or with the "
+          "core's +2 hit; + answers - 0.15 per shared weakness + 0.05 per support option):")
     for r in rows[:args.top]:
-        print(f"  {r['score']:.2f} {r['partner']:18s} walls {r['walls']:.2f} answers {r['answers']:.2f} "
-              f"shared [{r['shared']}] resists [{r['resists']}] [{r['support']}]  {r['set']}")
+        print(f"  {r['score']:.2f} {r['partner']:18s} clean {r['clean']:.2f} pair {r['pair']:.2f} (2HKO "
+              f"{r['walls']:.2f}) answers {r['answers']:.2f} spe {r['speed']} shared [{r['shared']}] "
+              f"[{r['support']}]  {r['set']}")
+        if r["missed"]:
+            print(f"        misses: {r['missed']}")
 
 
 if __name__ == "__main__":
