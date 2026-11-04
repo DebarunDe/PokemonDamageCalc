@@ -30,7 +30,8 @@ SEED = {"Grassy Seed": ("Grassy", "def", {"Grassy Surge"}), "Electric Seed": ("E
         "Psychic Seed": ("Psychic", "spd", {"Psychic Surge"}), "Misty Seed": ("Misty", "spd", {"Misty Surge"})}
 HALVED_IN_GRASSY = {"Earthquake", "Bulldoze", "Magnitude"}
 SUPPORT = {"Fake Out": "Fake Out", "Follow Me": "Follow Me", "Rage Powder": "Rage Powder", "Wide Guard": "Wide Guard",
-           "Tailwind": "Tailwind", "Icy Wind": "Icy Wind", "Helping Hand": "Helping Hand", "Parting Shot": "Parting Shot",
+           "Tailwind": "Tailwind", "Icy Wind": "Icy Wind", "Helping Hand": "Helping Hand",
+           "Parting Shot": "Parting Shot",
            "Taunt": "Taunt", "Quick Guard": "Quick Guard"}
 
 
@@ -150,7 +151,8 @@ def main(argv=None):
     if setters:
         print(f"\nterrain setters for the {args.seed}:")
         for r in [r for r in rows if r["setter"]]:
-            print(f"  {r['partner']:18s} walls {r['walls']:.2f} answers {r['answers']:.2f} pair {r['pair_offence']:.2f} "
+            print(f"  {r['partner']:18s} walls {r['walls']:.2f} answers {r['answers']:.2f} "
+                  f"pair {r['pair_offence']:.2f} "
                   f"shared [{r['shared']}] resists [{r['resists']}] support [{r['support']}]  {r['set']}")
     print("\nbest partners overall (walls + answers - 0.15 per shared weakness + 0.05 per support option):")
     for r in rows[:args.top]:
