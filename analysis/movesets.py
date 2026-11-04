@@ -18,6 +18,12 @@ move against every Pokemon are pruned before the search, so the search is exact 
 
     python analysis/movesets.py [--workers 4] [--only Medicham-Mega Lucario-Mega]
 Output: analysis/output/theory_movesets.csv (best set per Pokemon, with runner-up sets).
+
+First run (2026-11, 343 Pokemon, 51k sets): Life Orb is the best item for 211 of 261 non-Megas (Choice Scarf the
+rest); recoil moves dominate the top (Staraptor Reckless, Emboar Head Smash, Quaquaval Wave Crash), and their recoil
+and Life Orb's are not costed, so those sets are optimistic. Biggest gains over best-move-per-type picking: Staraptor
+(Double-Edge with Reckless), Weavile (Low Kick + Triple Axel), Mega Blastoise (Water Spout with Mega Launcher),
+Mega Floette (Light of Ruin), Hisuian Arcanine (Head Smash), Mega Kangaskhan (Double-Edge with Parental Bond).
 """
 
 from __future__ import annotations
