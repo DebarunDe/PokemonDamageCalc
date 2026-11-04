@@ -33,10 +33,10 @@ SUPPORT_ABILITY = {"Intimidate": "Intimidate", "Psychic Surge": "Psychic Terrain
                    "Friend Guard": "Friend Guard"}
 
 
-def best_sets():
-    """Best 4-attack theory set per Pokemon from theory_movesets.csv."""
+def best_sets(name="theory_movesets.csv"):
+    """Best 4-attack theory set per Pokemon from theory_movesets.csv (or a variant file)."""
     best = {}
-    for r in csv.DictReader(open(tc.OUT / "theory_movesets.csv")):
+    for r in csv.DictReader(open(tc.OUT / name)):
         if r["k"] == "4" and (r["pokemon"] not in best or float(r["score"]) > float(best[r["pokemon"]]["score"])):
             best[r["pokemon"]] = r
     return best

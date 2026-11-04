@@ -100,8 +100,20 @@ def pct_matrix(t, moves, item):
     return good, P
 
 
+ACC_EXP = 1.0  # accuracy ** ACC_EXP scales KO credit: 1 = expected value; above 1 prefers consistent moves
+
+
 def credit(P, acc):
-    return acc[None, :] * np.where(P >= 100, 1.0, np.where(P >= 50, 0.5, 0.0))
+    return (acc[None, :] ** ACC_EXP) * np.where(P >= 100, 1.0, np.where(P >= 50, 0.5, 0.0))
+
+
+def out_name():
+    return "theory_movesets.csv" if ACC_EXP == 1.0 else f"theory_movesets_acc{ACC_EXP:g}.csv"
+
+
+def _init(acc_exp):
+    global ACC_EXP
+    ACC_EXP = acc_exp
 
 
 def prune(C):
@@ -226,12 +238,16 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--only", nargs="*")
+    p.add_argument("--acc-exp", type=float, default=1.0,
+                   help="accuracy exponent for KO credit (2: lean towards consistent moves); output gets a suffix")
     args = p.parse_args(argv)
     import multiprocessing as mp
     tc.bench()  # writes the bench Speed cache before the workers start
     names = args.only or tc.ROSTER
     rows, errors = [], []
-    with mp.get_context("spawn").Pool(args.workers) as pool:
+    global ACC_EXP
+    ACC_EXP = args.acc_exp
+    with mp.get_context("spawn").Pool(args.workers, initializer=_init, initargs=(ACC_EXP,)) as pool:
         for i, res in enumerate(pool.imap_unordered(_job, names)):
             for r in res:
                 (errors if "error" in r else rows).append(r)
@@ -243,7 +259,7 @@ def main(argv=None):
             "speed", "walled_by"]
     rows.sort(key=lambda r: (r["pokemon"], r["k"], -r["score"]))
     tc.OUT.mkdir(exist_ok=True)
-    with open(tc.OUT / "theory_movesets.csv", "w", newline="") as fh:
+    with open(tc.OUT / out_name(), "w", newline="") as fh:
         wr = csv.DictWriter(fh, fieldnames=keys)
         wr.writeheader()
         wr.writerows(rows)
@@ -251,7 +267,7 @@ def main(argv=None):
     for r in rows:
         if r["k"] == 4 and (r["pokemon"] not in best or r["score"] > best[r["pokemon"]]["score"]):
             best[r["pokemon"]] = r
-    print(f"\n{len(rows)} sets for {len(best)} Pokemon -> {tc.OUT / 'theory_movesets.csv'}")
+    print(f"\n{len(rows)} sets for {len(best)} Pokemon -> {tc.OUT / out_name()}")
     for label, keep in (("Megas", lambda s: "-Mega" in s), ("non-Megas", lambda s: "-Mega" not in s)):
         print(f"\nBest 4-attack sets, {label}:")
         for r in sorted((r for r in best.values() if keep(r["pokemon"])), key=lambda r: -r["score"])[:25]:

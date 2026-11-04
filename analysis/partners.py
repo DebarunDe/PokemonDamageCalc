@@ -60,6 +60,9 @@ def main(argv=None):
     p.add_argument("--boost", default="atk=2", help="its setup boost, e.g. atk=2")
     p.add_argument("--seed", choices=sorted(SEED), default=None)
     p.add_argument("--top", type=int, default=25)
+    p.add_argument("--acc-exp", type=float, default=1.0,
+                   help="accuracy exponent for our side's KO credit (2: lean towards consistent moves); partner "
+                        "sets come from movesets.py run with the same --acc-exp. Threats stay at expected value")
     args = p.parse_args(argv)
     s = args.pokemon
     sp = {k: int(v) for k, v in (x.split("=") for x in args.sp.split(","))}
@@ -70,7 +73,9 @@ def main(argv=None):
     field = Field(doubles=True, terrain=terrain)
     defs, _ = tc.bench()
     roster = tc.ROSTER
-    best = tb.best_sets()
+    best = tb.best_sets()  # opponents: expected value
+    ours = best if args.acc_exp == 1.0 else tb.best_sets(f"theory_movesets_acc{args.acc_exp:g}.csv")
+    ae = args.acc_exp
 
     # the core's offence, +0 and after setup (item used: no item)
     core0 = PokemonSet(s, nature=args.nature, ability=ability, sp=sp)
@@ -78,7 +83,7 @@ def main(argv=None):
     acc = np.array([tc.acc_of(m) for m in args.moves])
     P0, g0 = hits(core0, args.moves, defs, field)
     P2, _ = hits(core2, args.moves, defs, field)
-    cred = lambda P: (acc[None, :len(g0)] * np.where(P >= 100, 1, np.where(P >= 50, .5, 0))).max(axis=1)
+    cred = lambda P: (acc[None, :len(g0)] ** ae * np.where(P >= 100, 1, np.where(P >= 50, .5, 0))).max(axis=1)
     c0, c2 = cred(P0), cred(P2)
     walls = [i for i, v in enumerate(c2) if v == 0]
     print(f"{s} ({ability}, {', '.join(args.moves)}; {args.sp}; seed {args.seed or '-'}, terrain {terrain or '-'})")
@@ -108,8 +113,9 @@ def main(argv=None):
     # candidates; each threat's best hit into every candidate, one batch per threat
     rows = []
     thr = [o for _, o, _ in threat]
-    cands = [c for c in sets if c.split("-")[0] != s.split("-")[0]]
-    cdefs = [sets[c][0].pset() for c in cands]
+    oursets = sets if ours is best else {o: tb.pset_of(r) for o, r in ours.items()}
+    cands = [c for c in oursets if c.split("-")[0] != s.split("-")[0]]
+    cdefs = [oursets[c][0].pset() for c in cands]
     survive = {}
     for o in thr:
         ot, om = sets[o]
@@ -121,10 +127,10 @@ def main(argv=None):
         for c, v in zip(cands, hx.max(axis=1)):
             survive[(o, c)] = v < 100
     for c in cands:
-        ct, cm = sets[c]
+        ct, cm = oursets[c]
         Pc, g = hits(ct.pset(), cm, defs, field)
         a = np.array([tc.acc_of(m) for m in g])
-        off = (a[None, :] * np.where(Pc >= 100, 1, np.where(Pc >= 50, .5, 0))).max(axis=1)
+        off = (a[None, :] ** ae * np.where(Pc >= 100, 1, np.where(Pc >= 50, .5, 0))).max(axis=1)
         wall_cov = float(np.mean([off[i] > 0 for i in walls])) if walls else 0.0
         # survive each threat's best hit (partner's theory set), then 2HKO it
         surv = [float(survive[(o, c)]) * (off[roster.index(o)] > 0) for o in thr]
