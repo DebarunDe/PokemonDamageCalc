@@ -1,0 +1,58 @@
+# Grassy Seed Sneasler, theory build (Pokemon Champions VGC, Regulation M-C). Five of six; slot 6 open.
+# Built step by step with analysis/ (move_report, partners, team_roles, movesets --acc-exp 2), no usage data.
+# Plan: Rillaboom sets Grassy Terrain on entry -> Sneasler's Grassy Seed triggers (+1 Def, Unburden: 284 Speed,
+#   faster than every legal Pokemon). Fake Out covers Sneasler's Swords Dance turn; at +2 the lead pair 2HKOs 99%
+#   of the roster. Kingambit punishes Intimidate (Defiant) and Sucker Punch gets around its Speed.
+# Two Mega Stones, one Mega per game (79% of M-C tournament teams carry two):
+#   Mega Salamence (mixed): physical pressure + Tailwind; Intimidate on entry before it Mega Evolves.
+#   Mega Delphox: fast special attacker (186), immune to Intimidate's drop; Levitate; OHKOs Mega Aggron,
+#   crushes opposing Sneasler. The one not Mega Evolving still plays in base form (Salamence keeps Intimidate).
+# Known gaps (for slot 6): Mega Dragonite (nothing 2HKOs it), Archaludon (Stamina: needs Sneasler's Close Combat or
+#   Close Combat + High Horsepower in one turn), no redirection, Fighting / Ice / Psychic hits that KO two of ours.
+# Spreads: attackers' theory spreads; Sneasler and Kingambit drop Speed for HP (Unburden / Sucker Punch).
+# Items besides the Mega Stones, seed and Life Orb are placeholders (item clause). SPs: 32 per stat, 66 total.
+
+Sneasler @ Grassy Seed
+Ability: Unburden
+SPs: 32 HP / 32 Atk / 2 Spe
+Adamant Nature
+- Close Combat
+- Dire Claw
+- Swords Dance
+- Protect
+
+Rillaboom @ Miracle Seed
+Ability: Grassy Surge
+SPs: 32 HP / 32 Atk / 2 Def
+Adamant Nature
+- Fake Out
+- Wood Hammer
+- High Horsepower
+- Grassy Glide
+
+Kingambit @ Life Orb
+Ability: Defiant
+SPs: 32 HP / 32 Atk / 2 SpD
+Adamant Nature
+- Kowtow Cleave
+- Sucker Punch
+- Iron Head
+- Protect
+
+Salamence @ Salamencite
+Ability: Intimidate
+SPs: 2 HP / 32 Atk / 32 SpA
+Lonely Nature
+- Double-Edge
+- Draco Meteor
+- Flamethrower
+- Tailwind
+
+Delphox @ Delphoxite
+Ability: Blaze
+SPs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Overheat
+- Psychic
+- Grass Knot
+- Protect
