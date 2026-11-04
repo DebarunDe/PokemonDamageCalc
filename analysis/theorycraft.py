@@ -484,6 +484,81 @@ def gravity_ideas():
     return out
 
 
+# ------------------------------------------------------------------------------------------------- coverage
+
+def ko_matrix(t: Theory, moves, weather=None, terrain=None):
+    """Per bench Pokemon, per move: KO credit (1 OHKO, 0.5 2HKO, else 0) times accuracy."""
+    defs, _ = bench()
+    f = Field(doubles=True, weather=weather, terrain=terrain)
+    att = t.pset()
+    good = []
+    for m in moves:
+        try:
+            calc.calculate_batch([m], [(att, defs[0], f, [0])])
+            good.append(m)
+        except CalcError:
+            pass
+    if not good:
+        return [], []
+    res = calc.calculate_batch(good, [(att, d, f, list(range(len(good)))) for d in defs])
+    acc = [1.0 if t.ability == "No Guard" else acc_of(m) for m in good]
+    rows = []
+    for hp, dmg in res:
+        rows.append([a * (1.0 if 100 * (lo + hi) / 2 / hp >= 100 else 0.5 if 100 * (lo + hi) / 2 / hp >= 50 else 0.0)
+                     for (lo, hi), a in zip(dmg, acc)])
+    return good, rows
+
+
+def best_moves(moves, rows, k=3):
+    """Greedy k moves maximising the roster's mean best KO credit."""
+    chosen = []
+    for _ in range(min(k, len(moves))):
+        best = max((i for i in range(len(moves)) if i not in chosen),
+                   key=lambda i: sum(max(r[j] for j in chosen + [i]) for r in rows))
+        chosen.append(best)
+    return chosen
+
+
+def coverage(k=3):
+    """Every legal Pokemon, every ability, physical and special: its best k attacks against the whole roster."""
+    _, speeds = bench()
+    out = []
+    for n, s in enumerate(ROSTER):
+        b = info(s)["base_stats"]
+        cats = ["Physical", "Special"] if abs(b["atk"] - b["spa"]) <= 15 else [category(s)]
+        best = None
+        for ab in abilities(s):
+            for cat in cats:
+                t = Theory(s, ab, cat=cat)
+                moves = attack_moves(s, cat, n_types=10)
+                good, rows = ko_matrix(t, moves)
+                if not good:
+                    continue
+                ch = best_moves(good, rows, k)
+                vals = [max(r[j] for j in ch) for r in rows]
+                power = sum(vals) / len(vals)
+                first = sum(v for v, d in zip(vals, speeds) if t.speed > d) / len(vals)
+                ohko = sum(v == 1.0 for v in vals) / len(vals)
+                walls = sum(v == 0.0 for v in vals) / len(vals)
+                row = {"pokemon": s, "ability": ab, "category": cat, "moves": ", ".join(good[j] for j in ch),
+                       "power": round(power, 3), "first": round(first, 3), "ohko": round(ohko, 3),
+                       "no_2hko": round(walls, 3), "speed": t.speed, "score": round(power + first, 3),
+                       "walled_by": ", ".join(d for d, v in zip(ROSTER, vals) if v == 0.0)}
+                if best is None or row["score"] > best["score"]:
+                    best = row
+        if best:
+            out.append(best)
+        if (n + 1) % 50 == 0:
+            print(f"  {n + 1} / {len(ROSTER)}", flush=True)
+    out.sort(key=lambda r: -r["score"])
+    keys = list(out[0])
+    with open(OUT / "theory_coverage.csv", "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=keys)
+        w.writeheader()
+        w.writerows(out)
+    return out
+
+
 # ------------------------------------------------------------------------------------------------- report
 
 def tried_pairs():
@@ -506,11 +581,21 @@ def tried_pairs():
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--per-family", type=int, default=8)
+    p.add_argument("--coverage", action="store_true", help="rank every Pokemon's offence against the roster")
     p.add_argument("--families", nargs="*", default=["ally-hit", "free spread", "field", "speed", "partner",
                                                       "gravity"])
     args = p.parse_args(argv)
     from replays import base
     OUT.mkdir(exist_ok=True)
+    if args.coverage:
+        rows = coverage()
+        print(f"\n{len(rows)} Pokemon -> {OUT / 'theory_coverage.csv'}")
+        print("best 3 attacks vs every legal Pokemon (power: OHKO 1 / 2HKO 0.5; first: same, only those it outspeeds)")
+        for r in rows[:40]:
+            print(f"  {r['score']:.2f}  {r['pokemon']:22s} {r['ability']:16s} power {r['power']:.2f} first "
+                  f"{r['first']:.2f} OHKO {r['ohko']:.2f} walled {r['no_2hko']:.2f}  spe {r['speed']:3d}  "
+                  f"{r['moves']}")
+        return
     fams = {"ally-hit": ally_hit, "free spread": free_spread, "field": field_ideas, "speed": speed_ideas,
             "partner": partner_ideas, "gravity": gravity_ideas}
     ideas = []
