@@ -1,0 +1,33 @@
+# Mega Staraptor + Gholdengo lead (Pokemon Champions VGC, Regulation M-C). Lead pair only; four slots open.
+# Usage (M-C tournaments): Mega Staraptor on 9.9% of teams (2,065); Gholdengo on 63% of those, 94% as below.
+#   Staraptor set: Brave Bird / Close Combat / Protect / Tailwind 70% (Roost instead of Tailwind 23%), Jolly 88%.
+# Why the pair works: Gholdengo (Steel) resists or is immune to what kills Staraptor on the ladder: Flying and Fairy
+#   (Hyper Voice from Aerilate / Pixilate users, Hurricane, Moonblast), Psychic, Ice, Normal. Staraptor is immune to
+#   Ground and resists Dark, two of Gholdengo's four weaknesses. Shared weaknesses: none.
+# Lead model (turn 1-2 equilibrium vs the most common ladder leads): favoured into Indeedee / Psychic Terrain leads
+#   (+1.9 to +2.1), Excadrill sand (+1.2 to +1.4), rain (Archaludon / Golisopod / Basculegion-F + Pelipper +0.4 to
+#   +1.1); losing badly into Mega Charizard Y sun (-1.3 to -2.1: Gholdengo is weak to Fire and sun Heat Wave hits
+#   both) and Mega Gengar + Incineroar (-1.2). Don't lead this into sun.
+# Natures: Jolly Staraptor (178) ties the Staraptor mirror and outspeeds unboosted Sneasler (172); Adamant (162)
+#   turns Brave Bird into a likely OHKO on Mega Charizard Y (94-111% vs 86-101%) and Close Combat into one on
+#   Incineroar and Archaludon. Modest Gholdengo: Make It Rain OHKOs Mega Floette / Sylveon (105-126 / 100-119%),
+#   which Timid only does on high rolls; Timid only gains Choice-less Basculegion (143). Modest.
+# SPs = Stat Points (max 32 per stat, 66 total).
+
+Staraptor @ Staraptite
+Ability: Intimidate
+SPs: 2 HP / 32 Atk / 32 Spe
+Jolly Nature
+- Brave Bird
+- Close Combat
+- Tailwind
+- Protect
+
+Gholdengo @ Life Orb
+Ability: Good as Gold
+SPs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Make It Rain
+- Shadow Ball
+- Nasty Plot
+- Protect
