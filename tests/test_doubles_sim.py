@@ -330,3 +330,15 @@ def test_team_specs_use_each_players_registered_sets():
         assert set(s.moves) <= set(sim.json.loads(moves)) and s.item in (item, None)
     common = sim.team_specs(*key, own_sets=False)
     assert [s.name for s in common] == [s.name for s in own]
+
+
+def test_stamina_raises_defense_after_each_hit(garchomp):
+    archaludon = spec("Archaludon", ["Flash Cannon"], ability="Stamina", nature="Calm", sp={"hp": 32, "spd": 32})
+    battle = sim.Battle([garchomp], [archaludon], random.Random(0))
+    a, b = battle.sides[0][0], battle.sides[1][0]
+    battle.use(a, "Dragon Claw", [b], new_turn())
+    first = 100 - b.hp
+    assert b.boosts["def"] == 1
+    hp = b.hp
+    battle.use(a, "Dragon Claw", [b], new_turn())
+    assert b.boosts["def"] == 2 and 0 < hp - b.hp < first

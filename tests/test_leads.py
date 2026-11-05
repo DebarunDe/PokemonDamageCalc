@@ -193,3 +193,19 @@ def test_dynamic_speed_tailwind_same_turn(monkeypatch):
     pay_fixed = leads.resolve(a, b, acts_a, acts_b, None, None)[0]
     assert pay_dyn == pytest.approx(1.5)  # A2 KOs B1 first
     assert pay_fixed == pytest.approx(-1.5)  # B1 KOs A2 first
+
+
+def test_stamina_raises_defense_between_hits(monkeypatch):
+    monkeypatch.setattr(leads, "TURN2", 0.0)
+    # 60% per hit at +0 Defense, 30% at +1: Stamina turns a two-hit KO into 90%
+    monkeypatch.setattr(leads, "damage",
+                        lambda me, i, other, t, moves, w, tr: [60.0 / (1 + other.boosts[t].get("def", 0))])
+    monkeypatch.setattr(leads, "move_info", lambda m: {"priority": 0, "category": "Physical"})
+    a = side(mon("A1", 100), mon("A2", 100))
+    both = [("move", "Hit", 0), ("move", "Hit", 0)]
+    _, ko_a, _ = leads.resolve(a, side(mon("B1", 50), mon("B2", 50)), both, [("pass",), ("pass",)], None, None)
+    assert ko_a == 1
+    stamina = mon("B1", 50)
+    stamina.ability = "Stamina"
+    pay, ko_a, _ = leads.resolve(a, side(stamina, mon("B2", 50)), both, [("pass",), ("pass",)], None, None)
+    assert ko_a == 0 and pay == pytest.approx(0.90)

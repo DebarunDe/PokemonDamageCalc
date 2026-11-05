@@ -6,7 +6,8 @@ Every combination is resolved with real damage calcs and turn-1 mechanics: prior
 friends in their weather, Unburden after a terrain seed), weather and terrain from lead and Mega abilities (the slower
 setter's wins, Megas after leads), Intimidate (Defiant / Competitive answer it), Fake Out flinch, Protect, Sucker
 Punch needing an attacking target, Psychic Terrain blocking priority into grounded targets, single-target moves
-retargeting when their target faints, Focus Sash / Sturdy. Payoff = damage dealt minus damage taken, + 0.5 per KO.
+retargeting when their target faints, Focus Sash / Sturdy, Stamina (+1 Defense after each hit). Payoff = damage
+dealt minus damage taken, + 0.5 per KO.
 The game's value under optimal mixed play is the lead matchup's predicted edge. Other status moves (Tailwind, Trick
 Room, setup) are not modelled: one turn can't see their payoff.
 
@@ -311,6 +312,20 @@ def _hit(hp, sashed, other, oi, j, dmg):
     hp[oi][j] -= dmg
 
 
+def _stamina(delta, other, oi, j, dmg):
+    """Stamina: +1 Defense each time a damaging hit lands and the Pokemon survives it."""
+    if dmg > 0 and other.specs[j].ability == "Stamina":
+        d = delta[oi][j]
+        d["def"] = min(6, d.get("def", 0) + 1)
+
+
+def _now(side, d):
+    """The side with this turn's stat changes (delta) added to its boosts."""
+    c = copy.copy(side)
+    c.boosts = [{st: b.get(st, 0) + x.get(st, 0) for st in set(b) | set(x)} for b, x in zip(side.boosts, d)]
+    return c
+
+
 def _drop(delta, other, oi, j, move):
     """A stat-drop move's secondary effect on the Pokemon it hit (Defiant / Competitive answer it)."""
     t = other.specs[j]
@@ -341,11 +356,7 @@ def turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain,
             if occ[si][slot] is None or hp[si][occ[si][slot]] <= 0:
                 spare = [k for k in range(len(sides[si].specs)) if k not in occ[si] and hp[si][k] > 0]
                 occ[si][slot] = spare[0] if spare else None
-    now = []
-    for si, side in enumerate(sides):
-        c = copy.copy(side)
-        c.boosts = [{st: b.get(st, 0) + d.get(st, 0) for st in set(b) | set(d)} for b, d in zip(side.boosts, delta[si])]
-        now.append(c)
+    now = [_now(side, delta[si]) for si, side in enumerate(sides)]
     order = []
     for si in (0, 1):
         oi = 1 - si
@@ -383,6 +394,10 @@ def turn2(sides, occ, hp, delta, tailwind, trick_room, sashed, weather, terrain,
             if cond:
                 d *= _act_mult(cond, si, k, m)
             _hit(hp, sashed, now[oi], oi, t, d)
+            if hp[oi][t] > 0:
+                _stamina(delta, now[oi], oi, t, d)
+                if any(st in delta[oi][t] for st in ("def", "spd")):  # a later hit this turn sees the boost
+                    now[oi] = _now(sides[oi], delta[oi])
             if m in DROPS and hp[oi][t] > 0 and d > 0:
                 _drop(delta, now[oi], oi, t, m)
     if cond:
@@ -481,6 +496,8 @@ def resolve(a, b, act_a, act_b, weather, terrain):
             if act[0] == "status":
                 _status(cond, delta, sides, occ, hp, si, slot, oi, t, j, act[1], moved, acts, terrain)
                 continue
+            if any(delta[oi][x].get(st) for x in range(len(other.specs)) for st in ("def", "spd")):
+                other = _now(sides[oi], [{st: v for st, v in x.items() if st in ("def", "spd")} for x in delta[oi]])
             if act[0] == "fake":
                 dmg = damage(me, slot, other, j, ["Fake Out"], weather, terrain)[0]
                 if (oi, t) not in moved:
@@ -494,6 +511,8 @@ def resolve(a, b, act_a, act_b, weather, terrain):
                 dmg *= 1.5
             dmg *= _act_mult(cond, si, slot, "Fake Out" if act[0] == "fake" else act[1])
             _hit(hp, sashed, other, oi, j, dmg)
+            if hp[oi][j] > 0:
+                _stamina(delta, other, oi, j, dmg)
             if act[0] == "move" and act[1] in DROPS and hp[oi][j] > 0 and dmg > 0:
                 _drop(delta, other, oi, j, act[1])
     kos = [sum(1 for h in hp[s] if h <= 0) for s in (0, 1)]

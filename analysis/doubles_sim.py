@@ -20,7 +20,7 @@ Mechanics covered:
     spread moves (and Earthquake hitting the ally), replacements from the back
     Choice item locking; Hurricane / Thunder / Blizzard accuracy in weather; Solar Beam and Growth in sun;
     accuracy of status moves (Sleep Powder 75%), Wide Lens, Ancient Power's stat boost
-    Supreme Overlord, Unburden, Hospitality, Friend Guard, Rough Skin / Iron Barbs; White Herb, Rocky Helmet,
+    Supreme Overlord, Unburden, Hospitality, Friend Guard, Rough Skin / Iron Barbs, Stamina; White Herb, Rocky Helmet,
     terrain seeds, Lum Berry and type-resist berries (used up after one hit)
 Not covered: voluntary switching (other than Parting Shot), Encore, Substitute,
 abilities beyond those above and the ones the calc applies to damage.
@@ -869,6 +869,8 @@ class Battle:
             if t.item == "Sitrus Berry" and t.hp <= 50:
                 t.hp = min(100.0, t.hp + 25)
                 t.lose_item()
+            if t.ability == "Stamina":
+                t.boost("def", 1)
             if mv == "Fake Out" and t.ability != "Inner Focus":
                 t.flinched = True
             if (mv in FLINCH_CHANCE and id(t) not in turn["moved"] and t.ability != "Inner Focus"
