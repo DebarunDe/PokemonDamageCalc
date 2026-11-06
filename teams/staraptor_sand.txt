@@ -1,0 +1,141 @@
+# Mega Staraptor / Mega Tyranitar sand (Pokemon Champions VGC, Regulation M-C), with leads and bring-4 per archetype.
+# Built in theory (calcs against all 344 legal Pokemon / the 70 most-used sets), then checked with the lead model
+# (analysis/leads.py: turns 1-2 as a simultaneous game, bring-4 with switching, 18 most common ladder leads) and the
+# battle sim (analysis/doubles_sim.py: full games against 2,548 real tournament teams, both Mega modes).
+#
+# Two Megas, one per game. Tyranitar carries Tyranitarite in both modes; un-Mega'd it is effectively itemless.
+#   Mega Staraptor mode: Mega Staraptor + base Tyranitar (sand on entry).
+#   Mega Tyranitar mode: Mega Tyranitar + base Staraptor (Intimidate, Tailwind).
+#   Bringing only one of them: it Mega Evolves. Bringing both: pick the Mega after seeing their lead.
+#
+# Roles. Attackers: Mega Staraptor, Tyranitar, Gholdengo, Volcarona. Support: Rillaboom (Fake Out, Grassy Terrain,
+#   Grassy Glide), Milotic (Icy Wind, Competitive). Speed control three ways (Tailwind x2, Icy Wind); sand overrides
+#   sun and rain; Competitive / Contrary punish Intimidate. Gaps accepted: redirection is only Volcarona's Rage
+#   Powder (no legal redirector did better: Clefable -6, Maushold -9 points in the sim), no Taunt for Trick Room
+#   (Mega Tyranitar 91 / Milotic 101 / Rillaboom 107 Speed play under it), no Wide Guard.
+# Sand chips Staraptor and Volcarona; Grassy Terrain heals Volcarona (grounded) but not Staraptor (Flying). Sand
+#   damage comes before Grassy healing, so a Focus Sash on 1 HP in sand faints at the end of that turn.
+# SPs = Stat Points (max 32 per stat, 66 total).
+
+Staraptor @ Staraptite
+Ability: Intimidate
+SPs: 2 HP / 32 Atk / 32 Spe
+Jolly Nature
+- Brave Bird
+- Close Combat
+- Tailwind
+- Protect
+
+Tyranitar @ Tyranitarite
+Ability: Sand Stream
+SPs: 32 HP / 32 Atk / 2 SpD
+Adamant Nature
+- Rock Slide
+- Knock Off
+- Ice Punch
+- Protect
+
+Gholdengo @ Life Orb
+Ability: Good as Gold
+SPs: 18 HP / 32 SpA / 16 Spe
+Modest Nature
+- Make It Rain
+- Shadow Ball
+- Nasty Plot
+- Protect
+
+Rillaboom @ Miracle Seed
+Ability: Grassy Surge
+SPs: 32 HP / 32 Atk / 2 Spe
+Adamant Nature
+- Fake Out
+- Grassy Glide
+- Wood Hammer
+- High Horsepower
+
+Milotic @ Sitrus Berry
+Ability: Competitive
+SPs: 32 HP / 32 SpA / 2 SpD
+Modest Nature
+- Icy Wind
+- Scald
+- Ice Beam
+- Protect
+
+Volcarona @ Focus Sash
+Ability: Flame Body
+SPs: 18 HP / 16 SpA / 32 Spe
+Timid Nature
+- Overheat
+- Rage Powder
+- Tailwind
+- Protect
+
+# ---------------------------------------------------------------------------------------------------- set notes
+# Staraptor: Jolly 178 outspeeds Sneasler (172), Volcarona, Mega Metagross, Ninetales-Alola; bulk SPs saved nothing.
+#   After one Close Combat (+1 Def / SpD) only 5 of the top 70 OHKO it (16 at +0). Tailwind kept over Helping Hand /
+#   Quick Attack (tied in the model); Protect is the slot that matters.
+# Tyranitar: one spread for both forms. Fast Jolly spreads let 13 of the top 70 OHKO the Mega (7 here). Ice Punch
+#   OHKOs Mega Salamence and hits Mega Garchomp Z 76% / Mega Dragonite 65%, which nothing else covers; Low Kick
+#   overlaps Close Combat. Stone Edge is the alternative if Pelipper is a problem (80% accurate).
+# Gholdengo: 18 HP stops 7 OHKOs (Incineroar, Mega Charizard Y, Mega Froslass, Dragapult, Hydreigon, Mega Mawile,
+#   Talonflame); 120 Speed doubles to 240 in Tailwind, ahead of Basculegion / Dragapult / Indeedee. Power Gem over
+#   Nasty Plot scored +0.08 in the lead model (Pelipper, Incineroar) but the model undervalues setup.
+# Rillaboom: High Horsepower OHKOs Sneasler (121%) and Mega Gengar, 81% into Gholdengo. Don't Fake Out Archaludon
+#   (Stamina): Fake Out Pelipper and keep Archaludon at +0 Def for Close Combat. 107 Speed beats the 105 mirror.
+# Milotic: Modest (9 OHKOs at +0, 37 after Competitive) costs one OHKO taken vs Calm. Sitrus: survives two hits of
+#   up to 59% (50% with Leftovers); it is on the field ~2.8 turns, too short for Leftovers to pay. Recover = Protect.
+# Volcarona: an attacker, not a redirector (Overheat 1.3 / Rage Powder 0.24 uses per game in the sim). Bulky
+#   18 / 16 / 32 beat full SpA by +0.9 in the sim; Focus Sash beat Charcoal (-1.7), Expert Belt (-1.9), Charti (-0.7).
+#   Its value: Mega Charizard Y + Mega Golisopod (+1.7 vs a redirector in its slot), Incineroar + Mega Metagross.
+
+# ---------------------------------------------------------------------------------------------------- game plan
+# Win rates: battle sim, our lead forced, the back two picked by preview, 3 games per team (±1-2 points; ±3 sand).
+# "Model" = lead-model plan for that specific lead (value: >0 favoured, 2+ = strongly; it predicts results weakly).
+# The two tools often disagree on the exact pair; where they agree, that's the plan. Base Tyranitar + Gholdengo
+# was the worst lead in every archetype in the sim (29-44%): don't lead it.
+#
+# Tailwind offence (25% of teams: Salamence, Sneasler, Raichu, Whimsicott...)       sim best: 58.7%
+#   Lead Milotic + Volcarona (Icy Wind + Tailwind turn 1), back Mega Tyranitar + Gholdengo. Alt: Mega Tyranitar +
+#   Volcarona (55.7%).
+#   Model: Mega Salamence + Sneasler -> Mega Staraptor + Milotic / Gholdengo, Rillaboom (+1.75); Excadrill +
+#   Sneasler -> Mega Staraptor + Rillaboom / Tyranitar, Milotic (+2.15); Mega Raichu X + Sneasler -> Mega
+#   Staraptor + Rillaboom / Gholdengo, Milotic (+1.15, our weakest lead); Mega Raichu Y + Rillaboom -> Rillaboom +
+#   Volcarona / Mega Staraptor, Gholdengo (+2.37).
+#
+# Sun (23%: Mega Charizard Y)                                                         sim best: 55.7%
+#   Lead Mega Tyranitar + Volcarona, back Staraptor + Milotic. Volcarona resists Fire in sun; Mega Tyranitar's sand
+#   replaces sun when it Mega Evolves after Charizard (slower Mega's weather sticks). Sim alternatives within noise:
+#   Mega Staraptor + Rillaboom (55.7%), Mega Staraptor + Milotic (54.4%), Milotic + Volcarona (54.3%).
+#   Model: Mega Charizard Y + Venusaur / + Mega Golisopod -> Mega Tyranitar + Volcarona (+1.94 / +2.19);
+#   + Mega Garchomp Z / + Archaludon -> Tyranitar + Volcarona, Mega Staraptor in back (+1.31 / +1.39);
+#   + Whimsicott -> Mega Tyranitar + Milotic / Gholdengo, Rillaboom (+2.26).
+#   Your line still works: Mega Staraptor leads, double Protect turn 1, Tyranitar in on turn 2 for sand.
+#
+# Rain (14%: Pelipper)                                                    WEAKEST: sim best only 45.5%
+#   The sim prefers the Mega Staraptor mode here (42% vs 35% overall): lead Mega Staraptor + Rillaboom (Fake Out
+#   Pelipper), back Tyranitar + Milotic; Tyranitar coming in resets rain to sand.
+#   Model prefers Mega Tyranitar leads: Basculegion-F + Pelipper -> Mega Tyranitar + Milotic / Staraptor,
+#   Gholdengo (+2.11); Archaludon + Pelipper -> Mega Tyranitar + Rillaboom / Gholdengo, Volcarona (+1.48);
+#   Mega Golisopod + Pelipper -> Mega Tyranitar + Volcarona / Staraptor, Rillaboom (+1.73).
+#   Rain beyond the lead (Swift Swim back-liners after rain returns) is where games are lost.
+#
+# Trick Room (12%)                                                                    sim best: 64.7%
+#   Lead Mega Staraptor + Milotic, back Tyranitar + Gholdengo; or Milotic + Volcarona (63.3%). Our slow members
+#   (Tyranitar, Milotic, Rillaboom) still move first under Trick Room.
+#   Model: Farigiraf + Incineroar -> Rillaboom + Milotic / Mega Staraptor, Tyranitar (+2.61).
+#
+# Psychic Terrain (12%: Indeedee)                                                     sim best: 68.3%
+#   Lead Milotic + Volcarona, back Mega Tyranitar + Gholdengo. Psychic Terrain blocks our Fake Out / Grassy Glide
+#   into grounded targets.
+#   Model: Armarouge + Indeedee-F -> Mega Tyranitar + Milotic / Staraptor, Rillaboom (+2.46); Mega Gardevoir +
+#   Indeedee-F -> Gholdengo + Volcarona / Staraptor, Mega Tyranitar (+2.30); Indeedee-F + Sneasler -> Mega
+#   Staraptor + Gholdengo / Milotic, Volcarona (+2.26).
+#
+# Balance / Incineroar (11%)                                                          sim best: 55.6%
+#   Lead Milotic + Volcarona (Competitive punishes Intimidate), back Mega Tyranitar + Gholdengo.
+#   Model: Incineroar + Mega Metagross -> Milotic + Volcarona / Mega Staraptor, Gholdengo (+3.00);
+#   Mega Gengar + Incineroar -> Tyranitar + Milotic / Mega Staraptor, Gholdengo (+1.31).
+#
+# Sand (4%: Excadrill, opposing Tyranitar)                                            sim best: 59.6%
+#   Lead Milotic + Volcarona, back Mega Tyranitar + Rillaboom (Grassy Terrain halves Earthquake).
