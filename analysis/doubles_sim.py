@@ -984,17 +984,22 @@ class Battle:
 
     def end_turn(self):
         for m in self.act(0) + self.act(1):
+            # end-of-turn order: sand first (a Pokemon left on 1 HP by Focus Sash faints here, before any
+            # healing), then Grassy Terrain and Leftovers healing, then burn
             if (self.weather == "Sand" and not {"Rock", "Ground", "Steel"} & set(m.s.types)
                     and m.ability not in ("Overcoat", "Magic Guard", "Sand Rush", "Sand Force")):
                 m.hp -= 6.25
-            if m.status == "brn":
-                m.hp -= 6.25
-            if m.item == "Leftovers":
-                m.hp = min(100.0, m.hp + 6.25)
-            if self.terrain == "Grassy" and m.grounded():
-                m.hp = min(100.0, m.hp + 6.25)
-            if m.hp <= 0:
-                self.faint(m)
+                if m.hp <= 0:
+                    self.faint(m)
+            if not m.fainted:
+                if self.terrain == "Grassy" and m.grounded():
+                    m.hp = min(100.0, m.hp + 6.25)
+                if m.item == "Leftovers":
+                    m.hp = min(100.0, m.hp + 6.25)
+                if m.status == "brn":
+                    m.hp -= 6.25
+                if m.hp <= 0:
+                    self.faint(m)
             m.turns_active += 1
             m.taunt = max(0, m.taunt - 1)
         for timer in (self.tailwind, self.reflect, self.light_screen, self.veil):

@@ -342,3 +342,15 @@ def test_stamina_raises_defense_after_each_hit(garchomp):
     hp = b.hp
     battle.use(a, "Dragon Claw", [b], new_turn())
     assert b.boosts["def"] == 2 and 0 < hp - b.hp < first
+
+
+def test_sand_knocks_out_before_grassy_terrain_heals():
+    volcarona = spec("Volcarona", ["Overheat"], ability="Flame Body", item="Focus Sash")
+    battle = sim.Battle([volcarona, volcarona], [spec("Tyranitar", ["Rock Slide"], ability="Sand Stream")],
+                        random.Random(0))
+    battle.weather, battle.terrain = "Sand", "Grassy"
+    low, full = battle.sides[0][0], battle.sides[0][1]
+    low.hp = 1.0  # left on 1 HP by Focus Sash
+    battle.end_turn()
+    assert low.fainted
+    assert full.hp == 100  # sand chip, then healed back: a full-HP Focus Sash stays intact
