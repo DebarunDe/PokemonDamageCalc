@@ -1,0 +1,170 @@
+# Dual weather: Archaludon rain + Mega Charizard Y sun (Pokemon Champions VGC, Regulation M-C). Full team report.
+#
+# Evidence used throughout:
+#   real    tournament teams (meta.sqlite): wins per 100 games above the players' skill (+ = better than expected)
+#   sim     battle sim (analysis/doubles_sim.py), full games vs 2,548 real tournament teams, paired comparisons
+#   model   lead model (analysis/leads.py), turns 1-2 game-theoretic, bring-4 with switching, 18 commonest leads
+# The sim's AI underplays screens and Sleep Powder and the lead model has no screens, so Grimmsnarl and Venusaur's
+# value is mostly in the real results.
+#
+# ------------------------------------------------------------------------------------------------ provenance
+# Archaludon: 3rd of 50 common species by strength above expectation, +1.8 ± 0.3 (tournaments +1.7, ladder +2.2),
+#   the most reliable strong non-Mega in the format. Mega Charizard Y: 5th, +1.7 ± 0.3.
+# This six is the commonest dual-weather build: 124 tournament teams with exactly these six at +4.9 (about ± 1.6);
+#   all Archaludon + Pelipper + Mega Charizard Y teams: 883 at +1.5 ± 0.6. One Mega only: the Mega Garchomp Z
+#   version (388 teams) does +1.6; a second stone that rarely Mega Evolves costs more than it adds.
+# Our change from the classic sets: Archaludon Bold 32 HP / 32 SpD instead of Modest (real Bold +2.8 / Calm +1.5 /
+#   Modest +0.8 on dual-weather teams; across all Archaludon teams +2.1 / +1.0 / -0.8; sim +6.8 over the classic).
+#   Pelipper Bold with Wide Guard (real +2.4 Bold vs -0.6 Modest; Wide Guard +1.7 vs +0.6 without).
+# Result: sim 61.7% with the sim's own team preview (classic six 54.7%); 66-67% when leading one of the three
+#   core leads below. Lead model +1.72 average, 1 losing lead of 18.
+#
+# ------------------------------------------------------------------------------------------------ theory
+# Choose the weather war you can win at team preview. Two weather engines, so against nearly every team one of
+# them is uncontested:
+#   SUN   Mega Charizard Y + Venusaur. Drought starts when Charizard Mega Evolves, after leads are in, so it
+#         replaces a lead Pelipper / Politoed / Tyranitar's weather on turn 1. Sun doubles Venusaur's Speed
+#         (Chlorophyll): Sleep Powder and Leaf Storm before most of the format. Heat Wave hits both foes.
+#   RAIN  Pelipper + Archaludon. Rain removes Electro Shot's charge turn (+1 SpA and the hit on the same turn);
+#         Pelipper's Tailwind fixes Archaludon's 105 Speed; Hurricane never misses in rain.
+#   Archaludon is the anchor in any weather: Stamina + Leftovers + 32 HP / 32 SpD, Snarl for special attackers.
+#   Outside rain it charges behind screens. In the sim it scores 30% of our KOs (Electro Shot is the top KO
+#   move, 20%) and is still standing at the end of 63% of wins.
+#   Grimmsnarl buys the turns both modes need: Prankster Reflect / Light Screen (8 turns with Light Clay) cover
+#   Archaludon's charge turn, Venusaur's Sleep Powder turn and a setter coming back in. Spirit Break for Dragons,
+#   Parting Shot to pivot. Real dual-weather teams with it: +1.8; without: -0.5.
+#   Choice Scarf Garchomp covers what neither weather does: fast in any weather, Earthquake into Raichu,
+#   Archaludon mirrors, Incineroar, Gholdengo, Kingambit, Mega Metagross; Rock Slide into Charizard and
+#   Volcarona. Charizard and Pelipper are immune to its Earthquake; Archaludon is not.
+# Bonus: their weather works for us too. Into rain teams, their own rain fires our Electro Shot immediately;
+#   into sun teams, their sun gives Venusaur Chlorophyll.
+# SPs = Stat Points (max 32 per stat, 66 total). One Mega: Charizard Y.
+
+Archaludon @ Leftovers
+Ability: Stamina
+SPs: 32 HP / 2 SpA / 32 SpD
+Bold Nature
+- Electro Shot
+- Dragon Pulse
+- Snarl
+- Protect
+
+Pelipper @ Sitrus Berry
+Ability: Drizzle
+SPs: 32 HP / 32 Def / 2 SpA
+Bold Nature
+- Hurricane
+- Weather Ball
+- Tailwind
+- Wide Guard
+
+Charizard @ Charizardite Y
+Ability: Blaze
+SPs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Heat Wave
+- Hurricane
+- Weather Ball
+- Protect
+
+Venusaur @ Focus Sash
+Ability: Chlorophyll
+SPs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Leaf Storm
+- Sludge Bomb
+- Sleep Powder
+- Protect
+
+Grimmsnarl @ Light Clay
+Ability: Prankster
+SPs: 32 HP / 17 Def / 17 SpD
+Impish Nature
+- Reflect
+- Light Screen
+- Spirit Break
+- Parting Shot
+
+Garchomp @ Choice Scarf
+Ability: Rough Skin
+SPs: 2 HP / 32 Atk / 32 Spe
+Adamant Nature
+- Earthquake
+- Rock Slide
+- Dragon Claw
+- Stomping Tantrum
+
+# ------------------------------------------------------------------------------------------------ set notes
+# (real = dual-weather tournament teams, wins per 100 above skill; sim = vs the classic-plus-Bold baseline)
+# Archaludon  Bold > Calm > Modest (real +2.8 / +1.5 / +0.8). Snarl over Flash Cannon: real +3.3 with Snarl,
+#             +0.7 with Flash Cannon (sim +0.6 for Flash Cannon is noise). Avoid Aura Sphere (-0.9).
+# Pelipper    Bold > Modest / Timid (+2.4 / -0.6 / -2.1); Calm +3.0 on only 77 teams. Wide Guard +1.7 vs +0.6
+#             without; it blocks Rock Slide (4x on Charizard), Earthquake (Archaludon), Heat Wave, Hyper Voice.
+#             Tailwind is essential: teams without it -2.3. Sitrus +2.1 vs Focus Sash -1.7.
+# Charizard   Modest (+2.4, 343 teams) over Timid (+0.9, 533); the sim leans Timid (+0.9 ± 0.5). Timid's 167
+#             Speed outspeeds Modest Charizard mirrors (152): switch if mirrors are common. Never Solar Beam
+#             (-3.7): Hurricane is the coverage that works in both weathers.
+# Venusaur    Modest, Focus Sash, Leaf Storm, Sleep Powder: all better in the real data. Earth Power over Leaf
+#             Storm worse in both (real -0.6 vs +2.0, sim -1.2). Life Orb +2.9 on only 41 teams.
+# Grimmsnarl  Impish (+3.5) over Sassy (+1.7) and Careful (+1.2); the sim agrees. Taunt / Thunder Wave / Fake
+#             Out over Parting Shot: no gain.
+# Garchomp    Adamant Choice Scarf: best in both (Jolly -1.5 in the sim; Life Orb / Sash + Protect -2 to -3.7).
+#             Every replacement for Garchomp tested in the sim lost 2-12 points.
+# Not adopted: the sim's Grimmsnarl -> Sneasler (+8.6 in the sim) is contradicted by real teams (Sneasler -3.3,
+#   28 teams; without Grimmsnarl -0.5). Hisuian Arcanine over Venusaur (+5 sim, model +1.87 with no losing
+#   lead) has never been tried by a real team, loses the Grass answer to rain and is 4x weak to our own
+#   Earthquake. Worth testing in practice, not proven.
+#
+# ------------------------------------------------------------------------------------------------ leads
+# Sim, our lead forced, back two by preview (± about 1-2 points; sand ± 3):
+#                          Charizard+Garchomp  Charizard+Venusaur  Archaludon+Pelipper  best other
+#   All teams                    67.2%              66.1%              66.1%
+#   Tailwind offence (25%)       64.0%              66.1%              66.0%
+#   Sun (23%)                    64.7%                -                  -          Venusaur+Garchomp 66.2%
+#   Rain (14%)                   72.4%                -                75.3%        Archaludon+Grimmsnarl 80.2%
+#   Trick Room (12%)             70.5%              71.8%              72.5%
+#   Psychic Terrain (12%)        71.2%              67.8%              71.4%
+#   Balance (11%)                66.7%              64.8%              65.8%
+#   Sand (4%)                    63.5%                -                65.6%        Archaludon+Grimmsnarl 66.9%
+# Never lead Pelipper + Charizard (our own weathers cancel: 43-45% into sun, rain and sand) or Pelipper +
+#   Grimmsnarl (47-55%).
+#
+# Game plan by archetype:
+#   Tailwind offence  Charizard + Venusaur (sun speed) or Archaludon + Pelipper (our Tailwind); Garchomp back.
+#   Sun               Venusaur + Garchomp: their sun turns on our Chlorophyll; Garchomp's Rock Slide for their
+#                     Charizard. Or our own Charizard + Garchomp. Not Pelipper + Charizard.
+#   Rain              Archaludon + Grimmsnarl: their rain fires Electro Shot at once, screens buy the turns
+#                     (80%). Archaludon + Pelipper also strong. Charizard in the back to take the weather.
+#   Trick Room        Archaludon + Pelipper or Charizard + Venusaur; all close. Our bulky side wins slow games.
+#   Psychic Terrain   Archaludon + Pelipper or Charizard + Garchomp.
+#   Balance           Charizard + Garchomp; Archaludon + Pelipper as the alternative.
+#   Sand              Archaludon + Grimmsnarl or Archaludon + Pelipper (Pelipper takes the weather back).
+# Model plans for specific common leads (value: >0 favoured):
+#   Excadrill + Sneasler               Charizard + Venusaur / Grimmsnarl, Garchomp       +1.71
+#   Mega Charizard Y + Mega Garchomp Z Archaludon + Grimmsnarl / Charizard, Garchomp     -0.59  (our worst lead)
+#   Mega Charizard Y + Mega Golisopod  Charizard + Garchomp / Archaludon, Pelipper       +2.70
+#   Archaludon + Mega Charizard Y      Archaludon + Garchomp / Charizard, Grimmsnarl     +1.00
+#   Basculegion-F + Pelipper           Charizard + Venusaur / Pelipper, Grimmsnarl       +2.39
+#   Mega Charizard Y + Venusaur        Charizard + Garchomp / Archaludon, Pelipper       +1.63
+#   Mega Salamence + Sneasler          Archaludon + Charizard / Pelipper, Garchomp       +1.11
+#   Indeedee-F + Sneasler              Charizard + Garchomp / Pelipper, Venusaur         +1.23
+#   Farigiraf + Incineroar             Charizard + Garchomp / Venusaur, Grimmsnarl       +1.27
+#   Incineroar + Mega Metagross        Archaludon + Charizard / Pelipper, Garchomp       +0.91
+#   Mega Gengar + Incineroar           Archaludon + Pelipper / Charizard, Garchomp       +1.06
+#   Armarouge + Indeedee-F             Charizard + Venusaur / Archaludon, Garchomp       +2.00
+#   Mega Gardevoir + Indeedee-F        Charizard + Garchomp / Venusaur, Grimmsnarl       +3.00
+#   Mega Golisopod + Pelipper          Archaludon + Charizard / Pelipper, Venusaur       +2.58
+#   Archaludon + Pelipper              Archaludon + Charizard / Venusaur, Garchomp       +2.67
+#   Mega Raichu X + Sneasler           Pelipper + Garchomp / Archaludon, Charizard       +1.04
+#   Mega Charizard Y + Whimsicott      Charizard + Garchomp / Archaludon, Grimmsnarl     +2.21
+#   Mega Raichu Y + Rillaboom          Charizard + Venusaur / Archaludon, Pelipper       +3.00
+#
+# ------------------------------------------------------------------------------------------------ weaknesses
+# No Fake Out and no Trick Room answer beyond screens and our slow, bulky half.
+# Charizard is 4x weak to Rock and Pelipper 4x to Electric: Wide Guard and Reflect soften Rock Slide; Garchomp
+#   handles the Electric types.
+# Mega Charizard Y + Mega Garchomp Z is the one losing lead in the model (-0.59): Garchomp Z outspeeds and hits
+#   Archaludon and Charizard hard. Grimmsnarl's Spirit Break and screens are the answer.
+# Rain is easy to lose: in the sim it is up only 22% of turns. Bring Pelipper back in to reset rain, and time
+#   Tailwind with Electro Shot.
+# Garchomp's Earthquake hits our own Archaludon (2x) and Venusaur; pair Garchomp with Charizard or Pelipper.
