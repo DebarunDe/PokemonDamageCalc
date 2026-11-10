@@ -168,3 +168,59 @@ Adamant Nature
 # Rain is easy to lose: in the sim it is up only 22% of turns. Bring Pelipper back in to reset rain, and time
 #   Tailwind with Electro Shot.
 # Garchomp's Earthquake hits our own Archaludon (2x) and Venusaur; pair Garchomp with Charizard or Pelipper.
+#
+# ------------------------------------------------------------------------------------------------ matchup guide
+# Bring-4 and lead per archetype: battle sim with all four and the lead forced, about 60 combinations tested per
+# archetype (± 1-2 points; sand ± 3; the best of 60 is a little flattered by noise). Damage = average %, in the
+# weather noted. Default four if unsure: Charizard, Garchomp, Archaludon, Pelipper (73.2% over all teams).
+#
+# TAILWIND OFFENCE (25%: Rillaboom 84%, Raichu Y 50%, Gholdengo 44%, Incineroar 43%, Volcarona 41%, Sneasler)
+#   Bring Charizard, Venusaur, Archaludon, Garchomp. Lead Charizard + Venusaur. 71.8%
+#   T1 Mega Evolve: sun. Heat Wave hits Rillaboom 225%, Gholdengo 235%; Hurricane Sneasler 201%. Venusaur
+#   (Chlorophyll) Sleep Powders Raichu Y or Sneasler before they move. Protect Venusaur when Volcarona or
+#   Incineroar can fire (239% / 187%). Back: Scarf Garchomp revenge-kills Raichu Y (Stomping Tantrum 182%,
+#   immune to Zap Cannon, which does 150% to Charizard), Sneasler (Earthquake 148%), Volcarona (Rock Slide 135%).
+#   Archaludon tanks and charges Electro Shot to close.
+#
+# SUN (23%: Charizard Y 81%, Garchomp 43%, Venusaur 39%, Kingambit, Archaludon, Farigiraf)
+#   Bring Venusaur, Garchomp, Archaludon, Charizard. Lead Venusaur + Garchomp. 70.8%
+#   Their sun gives our Venusaur Chlorophyll: Sleep Powder their biggest threat. Garchomp Rock Slides their
+#   Charizard (124%). Their Weather Ball does 229% to Venusaur: Focus Sash, or Protect on the Mega turn.
+#   Back: Archaludon takes Charizard's Fire for 31% and fires back (Electro Shot 150%, after its charge turn);
+#   our Charizard takes the sun back if it is lost and Weather Ball handles Kingambit (194%). Don't bring
+#   Pelipper + Charizard together into sun.
+#
+# RAIN (14%: Archaludon 82%, Pelipper 70%, Mega Golisopod 59%, Sneasler 39%, Politoed, Basculegion-F)
+#   Bring Archaludon, Grimmsnarl, Charizard, Garchomp. Lead Archaludon + Grimmsnarl. 87.6% (best matchup)
+#   Their rain fires our Electro Shot at once: Pelipper 416%, Basculegion 168%, Politoed 133%. Grimmsnarl sets
+#   Reflect / Light Screen first (Prankster) against Golisopod and Sneasler. Back: Charizard Mega Evolves and its
+#   sun shuts their rain off: Weather Ball does 331% to Golisopod and Swift Swim stops. Garchomp: Earthquake into
+#   Sneasler (148%) and Raichu X; watch Basculegion-F's Ice Beam (128% to Garchomp) and Raichu X's Volt Tackle
+#   (182% to Charizard).
+#
+# TRICK ROOM (12%: Sinistcha 58%, Incineroar 45%, Kingambit 37%, Farigiraf 36%, Sneasler, Mega Delphox)
+#   Bring Charizard, Venusaur, Archaludon, Pelipper. Lead Charizard + Venusaur. 79.5%
+#   Remove the setter before Trick Room: Heat Wave does 243% to Sinistcha and 194% to Kingambit; Sleep Powder
+#   Farigiraf (Sinistcha is Grass: powder fails on it). Protect Venusaur from Incineroar's Flare Blitz (187%).
+#   If Trick Room goes up: Archaludon and Pelipper are slow and bulky, they play well under it; Protect and Wide
+#   Guard to burn the turns.
+#
+# PSYCHIC TERRAIN (12%: Indeedee-F 70%, Sneasler 54%, Mega Gardevoir 31%, Mega Tyranitar 26%, Excadrill, Salamence)
+#   Bring Charizard, Garchomp, Archaludon, Pelipper. Lead Charizard + Garchomp, or Archaludon + Pelipper (both
+#   79.5%). Hurricane Sneasler (201%), Earthquake Excadrill (124%). Mega Tyranitar's Rock Slide (195% to
+#   Charizard): Protect, or Pelipper's Wide Guard. Gardevoir's Hyper Voice does 122% and Salamence's Draco 142%
+#   to Garchomp: keep it for the clean-up. Archaludon's Dragon Pulse handles Salamence (122% at +1).
+#   Leave Venusaur home: Expanding Force does 125% to it.
+#
+# BALANCE (11%: Rillaboom 80%, Incineroar 64%, Sneasler 60%, Kingambit 42%, Raichu Y 32%, Garchomp Z 27%)
+#   Bring Charizard, Garchomp, Archaludon, Pelipper. Lead Charizard + Garchomp. 72.3%
+#   Sun Heat Wave into Rillaboom (225%) and Kingambit (194%), Hurricane into Sneasler (201%); Garchomp
+#   Stomping Tantrum into Raichu Y (182%). Incineroar's Intimidate weakens Garchomp: target it with Charizard.
+#   Mega Garchomp Z's Power Gem does 135% to Charizard: Archaludon's Dragon Pulse answers it (120% at +1).
+#   Late: Pelipper back in for rain and Tailwind, Archaludon closes with Electro Shot.
+#
+# SAND (4%: Rillaboom 70%, Mega Tyranitar 60%, Excadrill 53%, Mega Salamence 40%, Gholdengo, Incineroar)
+#   Bring Charizard, Garchomp, Archaludon, Pelipper. Lead Charizard + Garchomp. 78.1%
+#   If their Mega Tyranitar Mega Evolves the same turn, it is slower, so its sand stays. Protect Charizard
+#   from Rock Slide (195%); Garchomp Earthquakes Excadrill (124%). Pelipper coming in resets the weather to
+#   rain for Archaludon.
